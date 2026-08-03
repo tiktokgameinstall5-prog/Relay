@@ -8,6 +8,8 @@ const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../..');
 
 export default defineConfig({
+  // Content sources are declared in src/index.css with @source, which is how
+  // Tailwind 4 does it — the Vite plugin itself takes no content option.
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {

@@ -1,8 +1,12 @@
 @import 'tailwindcss';
 
-/* Tailwind 4 is configured in CSS, not a JS config file. These @theme values
-   are the CLAUDE.md §9 design tokens, mirroring the `C` object at the top of
-   workspace-relay-prototype.jsx so utilities and inline token styles agree. */
+/* Tailwind 4 scans content via @source rather than a config file. Paths are
+   relative to THIS file (apps/web/src/), so the monorepo root is three up. */
+@source '../../../workspace-relay-prototype.jsx';
+
+/* These @theme values are the CLAUDE.md §9 design tokens, mirroring the `C`
+   object at the top of workspace-relay-prototype.jsx so utilities and inline
+   token styles agree. */
 @theme {
   --color-sidebar-bg: #181a24;
   --color-sidebar-bg-active: #262a3a;
