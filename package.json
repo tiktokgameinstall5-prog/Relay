@@ -12,8 +12,7 @@
   "scripts": {
     "dev": "npm --workspace apps/api run start:dev",
     "build": "npm --workspace apps/api run build",
-    "db:up": "npm --workspace apps/api run db:up",
-    "db:down": "npm --workspace apps/api run db:down",
+    "db:check": "npm --workspace apps/api run db:check",
     "db:migrate": "npm --workspace apps/api run db:migrate",
     "test": "npm --workspace apps/api run test",
     "test:e2e": "npm --workspace apps/api run test:e2e",

@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+/* Tailwind 4 is configured in CSS, not a JS config file. These @theme values
+   are the CLAUDE.md §9 design tokens, mirroring the `C` object at the top of
+   workspace-relay-prototype.jsx so utilities and inline token styles agree. */
+@theme {
+  --color-sidebar-bg: #181a24;
+  --color-sidebar-bg-active: #262a3a;
+  --color-sidebar-text: #9297aa;
+  --color-signal: #3654f4;
+  --color-signal-soft: #edf0fe;
+  --color-active: #0073ea;
+  --color-done: #00c875;
+  --color-amber: #fdab3d;
+  --color-ink: #161a22;
+  --color-cool-slate: #f4f5f8;
+  --color-hairline: #e4e7ec;
+
+  --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-cool-slate);
+  -webkit-font-smoothing: antialiased;
+}

@@ -17,6 +17,10 @@
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
+    // Explicit rather than inferred: ts-jest compiles each file in isolation
+    // and does not always pick up @types from the workspace root, which shows
+    // up as "Cannot find name 'describe'" only under the test runner.
+    "types": ["node", "jest"],
     "paths": {
       "@/*": ["src/*"]
     }
