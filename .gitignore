@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# env & secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# embedded postgres data dir + downloaded binaries
+.pgdata/
+.embedded-postgres/
+
+# test & coverage
+coverage/
+*.lcov
+.nyc_output/
+
+# logs
+logs/
+*.log
+npm-debug.log*
+
+# editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Claude Code local overrides
+.claude/settings.local.json

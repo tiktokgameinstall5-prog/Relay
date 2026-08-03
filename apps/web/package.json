@@ -1,0 +1,6 @@
+{
+  "name": "web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Relay web client — placeholder, built in Phase 2"
+}

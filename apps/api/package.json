@@ -1,0 +1,17 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "nest build",
+    "start:dev": "nest start --watch",
+    "start:prod": "node dist/main",
+    "db:up": "tsx src/db/scripts/start-embedded-pg.ts",
+    "db:down": "tsx src/db/scripts/stop-embedded-pg.ts",
+    "db:migrate": "tsx src/db/scripts/migrate.ts",
+    "db:generate": "drizzle-kit generate",
+    "test": "jest",
+    "test:e2e": "jest --config jest.e2e.config.ts --runInBand",
+    "test:isolation": "jest --config jest.e2e.config.ts --runInBand --testPathPattern=isolation"
+  }
+}
