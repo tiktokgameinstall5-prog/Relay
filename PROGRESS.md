@@ -82,7 +82,33 @@ to assert the definer role is `NOLOGIN` and owns nothing but those two functions
 `auth.e2e-spec.ts` regression block still green (it already pins that the definer lookups did
 not become a general bypass).
 
-### 2. `.env` secrets are dev-generated
+### 2. Require TLS on database connections (`ssl = off` today)
+
+**Status:** open. **Blocks:** production launch (any deploy where API and DB are separate hosts).
+
+The local Postgres runs `ssl = off`. That is currently harmless *only* because the server was
+changed to `listen_addresses = 'localhost'` on 2026-08-04 — traffic never leaves the machine,
+so there is no wire to sniff. Both mitigations are properties of the dev setup, and neither
+survives a real deployment.
+
+In production the API and database sit on different hosts, so every query — including the
+bcrypt-verified login path and the `app.current_org_id` context that all tenant isolation
+depends on — crosses a network. Unencrypted, that is credentials and tenant identifiers in
+plaintext.
+
+**Definition of done:** server has `ssl = on` with a real certificate (managed providers such
+as RDS supply one); connection strings use `sslmode=verify-full` — **not** `require`, which
+encrypts but does not authenticate the server and so still allows a MITM — with the CA bundle
+pinned; `env.validation.ts` refuses to boot when `NODE_ENV=production` and `DATABASE_URL`
+lacks `sslmode=verify-full`, so this cannot regress silently the way an ops-only setting can.
+
+**Related, already done (dev only):** `listen_addresses` was `'*'` (installer default), binding
+every interface. Now `'localhost'`. Config backed up at
+`C:\Program Files\PostgreSQL\17\data\postgresql.conf.bak-20260804`. That file is outside the
+repo and therefore outside version control — a production deploy must set this through the
+provider's config management, not by hand.
+
+### 3. `.env` secrets are dev-generated
 
 `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` and both role passwords were generated locally.
 Production needs freshly generated secrets from a secret manager, never carried over from dev.
@@ -157,6 +183,19 @@ nothing.** Fixed by `0003`, and the trade-off it accepts is now a tracked launch
 **Verification (all green):** `tsc --noEmit` clean · `db:check` 5/5 · `test:isolation` 34/34
 · `test:e2e` 63/63 (2 suites) · manual smoke 17/17 against the compiled `dist/main.js` over
 real HTTP, confirming `managerId: null` for an Owner and exactly six JWT claims.
+
+**Postgres hardening (dev machine).** Audit of where the database actually runs turned up
+`listen_addresses = '*'` — the installer default, binding every network interface with
+`ssl = off`. Nothing needed non-local access, so it is now `'localhost'`; confirmed by
+`netstat` (`0.0.0.0:5432` → `127.0.0.1:5432`) and by reading the live setting back after a
+service restart. `db:check` 5/5, `test:isolation` 34/34, `test:e2e` 63/63 all still pass
+afterwards. Config backed up to `postgresql.conf.bak-20260804`. `ssl = off` remains and is
+now tracked as launch blocker #2 — harmless while loopback-only, unacceptable once the API
+and DB are on separate hosts.
+
+Also verified in that audit: both connection strings point at `localhost:5432`, the server
+reports loopback on both ends, `.env` is matched by `.gitignore:7` and has never appeared in
+any commit on any branch (`git log --all --full-history`), and no git remote is configured.
 
 **Process note:** the DI boot failure chased for part of this session was self-inflicted — it
 only reproduced under `tsx`, which does not emit decorator metadata. The project's real start
