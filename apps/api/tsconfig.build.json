@@ -1,7 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "outDir": "./dist"
+    "outDir": "./dist",
+    // TypeScript 6 requires rootDir to be explicit rather than inferred from the
+    // input set. Set here and not in tsconfig.json, which also includes test/ —
+    // a shared rootDir would have to be the parent directory and would put
+    // compiled output under dist/src/.
+    "rootDir": "./src"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "test"]

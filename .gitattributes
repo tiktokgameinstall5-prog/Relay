@@ -1,0 +1,31 @@
+# Line-ending policy.
+#
+# Windows clones typically have core.autocrlf=true, which rewrites LF to CRLF
+# on checkout. That is harmless for most files but NOT for SQL migrations: the
+# migration runner checksums each file to detect edits to already-applied
+# migrations, and a line-ending rewrite changes the bytes without changing the
+# SQL. The guard then refuses to run on a fresh clone. (The runner also
+# LF-normalises before hashing, so the two fixes are belt and braces.)
+#
+# Default: let git decide, normalising to LF in the repository.
+* text=auto
+
+# Keep LF in the working tree, on every platform, for anything whose exact
+# bytes are load-bearing or which is consumed by tools that dislike CRLF.
+*.sql   text eol=lf
+*.sh    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+
+# Binary: never touch.
+*.docx  binary
+*.png   binary
+*.jpg   binary
+*.ico   binary

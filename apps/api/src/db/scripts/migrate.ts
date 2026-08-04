@@ -53,7 +53,15 @@ async function main() {
 
     for (const filename of files) {
       const sql = await readFile(join(MIGRATIONS_DIR, filename), 'utf8');
-      const checksum = createHash('sha256').update(sql).digest('hex');
+      // Checksum LF-normalised content, not raw bytes. On Windows with
+      // core.autocrlf=true, git rewrites line endings on checkout, so hashing
+      // raw bytes makes an untouched file look edited — the guard fires on a
+      // fresh clone, or after any operation that re-checks-out files (this
+      // happened for real after a rebase). Normalising means the checksum
+      // tracks the SQL itself, which is what the guard is actually about.
+      const checksum = createHash('sha256')
+        .update(sql.replace(/\r\n/g, '\n'))
+        .digest('hex');
       const prior = appliedByName.get(filename);
 
       if (prior && prior !== checksum) {
