@@ -117,6 +117,53 @@ Production needs freshly generated secrets from a secret manager, never carried 
 
 <!-- Add one entry per session, most recent on top -->
 
+### 2026-08-04 (later) — Interactive API docs at `/api/docs`
+
+Additive only: no handler logic, no query, no policy changed. It exists so the Owner
+signup → login → `/me` chain can be exercised from a browser until the Phase 2 UI lands.
+
+- `src/docs/swagger.ts` — `DocumentBuilder` + `SwaggerModule.setup`. Two options are
+  load-bearing rather than cosmetic. `useGlobalPrefix: true`, because Swagger does **not**
+  inherit `setGlobalPrefix('api')` and silently mounts at `/docs` without it (caught in the
+  browser: `/api/docs` 404, `/docs` 200). And `persistAuthorization: false`, because `true`
+  writes the bearer token to `localStorage`, where it outlives the tab.
+- `src/auth/dto/api-response.dto.ts` — response classes for `AuthResult` / `MeResponse`.
+  Swagger builds schemas from runtime metadata and a TS `interface` emits none, so both
+  would document as `{}`. Each class `implements` the real interface, which turns doc drift
+  into a compile error. Note `implements` needs a *name*: `AuthResult['user']` is a TS2500,
+  hence the one-line `AuthResultUser` alias.
+
+**The docs page is UNAUTHENTICATED and cannot be otherwise.** `SwaggerModule.setup` mounts
+Express middleware on the HTTP adapter, so the global `JwtAuthGuard` never sees those
+requests — `@Public()` is not involved and could not help. It also enumerates every route,
+DTO field, and validation rule. Hence `API_DOCS_ENABLED`, which defaults on outside
+production and **off in it**; when false, `setupSwagger()` is simply not called, so the
+route does not exist rather than existing and refusing. Verified both ways: enabled →
+`/api/docs` 200 and the full signup → Authorize → `/me` 200 flow works in the browser;
+`API_DOCS_ENABLED=false` → `/api/docs` and `/docs` both 404 while `/api/me` still 401.
+Opting in on production is allowed but logs a `logger.warn`.
+
+**`@nestjs/swagger` is pinned to exactly `11.4.5`, deliberately.** `11.4.6` pins
+`js-yaml@5.2.1`, which is inside the GHSA-pm4m-ph32-ghv5 (high) range; `11.4.5` uses
+`js-yaml@4.3.0`, outside it. The normal fix would be an `overrides` entry, but **npm 11.3.0
+in this environment ignores the `overrides` field entirely** — a deliberately bogus
+`"js-yaml": "999.999.999"` override produced no error and no resolution change, and a
+from-scratch lockfile regeneration never recorded an `overrides` key. Worth knowing before
+anyone reaches for `overrides` again here. Production dependency audit is now clean
+(`npm audit --omit=dev` → 0); the remaining 4 moderate are dev-only and pre-existing
+(`drizzle-kit` → `esbuild`). Revisit the pin when a `>11.4.6` release moves off js-yaml 5.x.
+
+**Incidental fix, unrelated to Swagger:** `npm run start:dev` was dying with
+`Cannot find module dist/main`. `nest-cli.json` sets `deleteOutDir`, but the incremental
+`tsconfig.build.tsbuildinfo` sat *beside* `tsconfig.build.json` rather than inside `dist` —
+so the wipe removed the output while the cache still claimed every file was emitted, and
+watch mode compiled cleanly and wrote nothing. Fixed by pointing `tsBuildInfoFile` into
+`dist` so the wipe invalidates the cache it belongs to. Also added an `api` entry to
+`.claude/launch.json`.
+
+Left behind: the smoke test created a real org (`Swagger Smoke Test Co`,
+`docs-smoke-2026-08-04@relay.test`) in the dev database.
+
 ### 2026-08-04
 
 **Owner auth: signup, login, JWT strategy, `/me`** — Phase 1 build-order item 1.

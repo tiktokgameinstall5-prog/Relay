@@ -36,6 +36,17 @@ export interface AppEnv {
   BCRYPT_COST: number;
   LOGIN_THROTTLE_LIMIT: number;
   LOGIN_THROTTLE_TTL_SECONDS: number;
+  /**
+   * Whether to mount the interactive Swagger UI at /api/docs.
+   *
+   * Defaults to on outside production and off in it. The page is unauthenticated
+   * — SwaggerModule mounts Express middleware, so the global JwtAuthGuard never
+   * sees those requests — and it enumerates every route, DTO field, and
+   * validation rule in the API. That is exactly what makes it useful in
+   * development and what makes it reconnaissance in production. Turning it on
+   * there has to be a deliberate, greppable act.
+   */
+  API_DOCS_ENABLED: boolean;
 }
 
 function fail(problems: string[]): never {
@@ -84,6 +95,28 @@ function intInRange(
     return def;
   }
   return n;
+}
+
+/**
+ * Parse an explicit boolean, falling back to `def` when unset or empty.
+ *
+ * Only "true"/"1" and "false"/"0" are accepted. Anything else is a problem
+ * rather than a silent falsy — "no", "off", or a typo'd "ture" quietly meaning
+ * false is precisely how a flag that gates an unauthenticated docs page ends up
+ * in the wrong state.
+ */
+function boolOrDefault(
+  name: string,
+  raw: string | undefined,
+  def: boolean,
+  problems: string[],
+): boolean {
+  if (raw === undefined || raw.trim() === '') return def;
+  const v = raw.trim().toLowerCase();
+  if (v === 'true' || v === '1') return true;
+  if (v === 'false' || v === '0') return false;
+  problems.push(`${name} must be true or false, got "${raw}".`);
+  return def;
 }
 
 export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
@@ -146,6 +179,14 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       900,
       1,
       86_400,
+      problems,
+    ),
+    // Off by default in production, on everywhere else. Opting in on production
+    // is allowed but must be explicit — see the warning emitted in main.ts.
+    API_DOCS_ENABLED: boolOrDefault(
+      'API_DOCS_ENABLED',
+      source.API_DOCS_ENABLED,
+      nodeEnv !== 'production',
       problems,
     ),
   };

@@ -5,6 +5,7 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { appEnv } from './config/configuration';
+import { API_DOCS_PATH, setupSwagger } from './docs/swagger';
 
 async function bootstrap() {
   // Typed as the Express application so `set('trust proxy', …)` below is
@@ -33,8 +34,27 @@ async function bootstrap() {
   app.set('trust proxy', 1);
 
   const env = appEnv(app.get(ConfigService));
+  const logger = new Logger('Bootstrap');
+
+  // After the ValidationPipe and prefix are set, so the generated document
+  // reflects the pipeline requests actually go through.
+  if (env.API_DOCS_ENABLED) {
+    setupSwagger(app);
+    if (env.NODE_ENV === 'production') {
+      // Allowed, but never silently. The page is unauthenticated and lists every
+      // route and field — see the header of docs/swagger.ts.
+      logger.warn(
+        `API_DOCS_ENABLED is true in production: /api/${API_DOCS_PATH} is publicly ` +
+          `readable and enumerates every endpoint. Unset it unless this is deliberate.`,
+      );
+    }
+  }
+
   await app.listen(env.PORT);
-  new Logger('Bootstrap').log(`API listening on http://localhost:${env.PORT}/api`);
+  logger.log(`API listening on http://localhost:${env.PORT}/api`);
+  if (env.API_DOCS_ENABLED) {
+    logger.log(`API docs at http://localhost:${env.PORT}/api/${API_DOCS_PATH}`);
+  }
 }
 
 bootstrap();

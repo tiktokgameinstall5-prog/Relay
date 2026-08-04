@@ -6,7 +6,13 @@
     // input set. Set here and not in tsconfig.json, which also includes test/ —
     // a shared rootDir would have to be the parent directory and would put
     // compiled output under dist/src/.
-    "rootDir": "./src"
+    "rootDir": "./src",
+    // Inside dist, not beside this file. nest-cli sets deleteOutDir, so a
+    // buildinfo left outside dist survives the wipe and tells tsc every file is
+    // already emitted — watch mode then compiles cleanly, emits nothing, and
+    // `nest start` dies on a missing dist/main. Keeping the two together means
+    // the wipe invalidates the cache it belongs to.
+    "tsBuildInfoFile": "./dist/tsconfig.build.tsbuildinfo"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "test"]
