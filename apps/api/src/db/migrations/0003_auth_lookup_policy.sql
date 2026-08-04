@@ -1,0 +1,78 @@
+-- ===========================================================================
+-- 0003_auth_lookup_policy.sql — make the SECURITY DEFINER lookups actually work
+--
+-- WHAT WAS WRONG WITH 0002
+--
+-- 0002 added auth_lookup_by_email / auth_lookup_by_id as SECURITY DEFINER
+-- functions owned by relay_migrator, on the assumption that executing as the
+-- table owner would see through RLS. It does not. SECURITY DEFINER changes the
+-- *effective role*, and `FORCE ROW LEVEL SECURITY` applies to the table owner
+-- too — so the policies are evaluated inside the function exactly as they would
+-- be for any other caller, and with no tenant context set they match nothing.
+--
+-- Measured on the live database, same committed row read three ways:
+--
+--   definer fn, no tenant context   ->  0 rows   <- what login actually does
+--   definer fn, WITH tenant context ->  1 row    <- proves RLS is the filter
+--   relay_migrator direct, no ctx   ->  0 rows
+--
+-- The 0002 verification missed this because it was run against an email that
+-- did not exist, where 0 rows is also the correct answer. It could not
+-- distinguish "works" from "never returns anything".
+--
+-- THE FIX
+--
+-- A policy that lets the effective role inside those functions read the table.
+-- Inside a SECURITY DEFINER function current_user is the function owner, so a
+-- policy scoped `TO relay_migrator` applies there — and nowhere else.
+--
+-- WHAT THIS DOES NOT CHANGE
+--
+--   * relay_app is not relay_migrator and is not a member of it, so the runtime
+--     role still gets 0 rows from a context-free read. That is asserted in
+--     test/auth.e2e-spec.ts and by db:check.
+--   * FORCE ROW LEVEL SECURITY stays on. test/helpers/global-setup.ts still
+--     refuses to run the suite without it.
+--   * Fixtures are still seeded through relay_app with a context set, so the
+--     test write path and the production write path still cannot drift.
+--   * SELECT only. No INSERT/UPDATE/DELETE policy is added for any role here.
+--
+-- WHY THIS IS AN ACCEPTABLE TRADE, AND WHAT THE TIGHTER OPTION IS
+--
+-- The cost is that a relay_migrator connection can now read "user" without a
+-- tenant context. That role already owns every table and can DROP POLICY or
+-- disable RLS outright, so it gains no capability it did not have — and the API
+-- never connects as it: env.validation.ts refuses to boot if DATABASE_URL points
+-- at relay_migrator.
+--
+-- The strictly tighter alternative is a dedicated NOLOGIN role holding BYPASSRLS
+-- that owns only these two functions, confining the bypass to function calls
+-- rather than to anyone holding migrator credentials. That is the intended
+-- production design and is tracked in PROGRESS.md under "Production hardening
+-- TODO" as a launch blocker. It is not used here because relay_migrator cannot
+-- create roles (bootstrap.sql:28 sets NOCREATEROLE) and the postgres superuser
+-- password is not available in this dev environment — probed and confirmed:
+-- CREATE ROLE ... NOLOGIN BYPASSRLS -> "permission denied to create role".
+--
+-- Note this is a missing *credential*, not a platform limitation: PostgreSQL 16
+-- relaxed BYPASSRLS granting so that any role holding BYPASSRLS + CREATEROLE can
+-- grant it, no true superuser needed. We target PG 17, so a managed provider's
+-- admin role (e.g. rds_superuser) suffices. Adopting it means adding the role to
+-- bootstrap.sql — already a run-once-as-superuser file — and dropping this policy
+-- in a NEW migration, never by editing this one.
+--
+-- Flagged for the human review that CLAUDE.md §12 requires on any change to
+-- authentication or isolation logic.
+-- ===========================================================================
+
+-- Scoped three ways: one role, one command, one table.
+--
+-- `TO relay_migrator` is what keeps this from being a general hole — relay_app
+-- does not match it, so the runtime role's behaviour is unchanged. The predicate
+-- is `true` because the whole point of a pre-auth lookup is that no tenant is
+-- known yet; the narrowing is the role and command scope, not the predicate.
+DROP POLICY IF EXISTS user_definer_lookup ON "user";
+CREATE POLICY user_definer_lookup ON "user"
+  FOR SELECT
+  TO relay_migrator
+  USING (true);
