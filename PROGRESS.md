@@ -114,9 +114,104 @@ provider's config management, not by hand.
 `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` and both role passwords were generated locally.
 Production needs freshly generated secrets from a secret manager, never carried over from dev.
 
+## Phase 2 write-authorization constraint (read before adding any member-writable route)
+
+**Status:** open by design, not a bug. **Found:** 2026-08-04, during `/security-review` of
+the auth module. **Not currently exploitable** — no member-writable route exists yet.
+
+**RLS cannot distinguish a member from a manager on writes, and never will.** In
+`0001_rls.sql` the `user` and `team` policies are `FOR ALL` with a single predicate:
+
+```sql
+org_id = app_current_org_id()
+AND (app_current_role() = 'owner' OR manager_id = app_current_manager_id())
+```
+
+There is no member branch, and that is deliberate — the `manager_id` self-reference
+invariant (owner NULL / manager own id / member → manager) is what lets one uniform
+predicate serve all three roles with no `CASE`. But it means a member's slice is *identical*
+to their manager's, and `0001_rls.sql:131` grants `relay_app` `UPDATE, DELETE` on `"user"`
+and `team` for every session regardless of role. So at the database layer, a member session
+can UPDATE or DELETE a teammate's row.
+
+**Consequence for the guards:** `ResourceOwnerGuard` answers "is this row inside your tenant
+slice", which is the correct contract for *reads* — the leaderboard (CLAUDE.md §4) and the
+relay chain (§9) both require a member to see teammates, which is why
+`memberA1 → memberA2.id = 200` is pinned as a test rather than treated as a leak. That same
+answer is **insufficient for writes.** Write authorization cannot be delegated to RLS and
+cannot be delegated to `ResourceOwnerGuard` either.
+
+**Where write authorization goes instead:** inside the writing statement, as a predicate on
+the row's own business state. For the relay forward (§2 — "only the member at the active
+step can act"):
+
+```sql
+UPDATE task_step SET status = 'completed', completed_at = now()
+ WHERE id = $1 AND assigned_user_id = $2 AND status = 'active'
+```
+
+Zero rows affected is the rejection (403/409). This placement is not a style preference —
+guards run in a *separate transaction* from the handler's write, so a guard-based check is a
+check-then-act race: two members could both pass it and both forward the same step. The row
+lock makes the double-forward impossible rather than merely unlikely.
+
+**Do not "fix" this by adding a member branch to the RLS policy.** That would break the
+read contract the leaderboard and relay chain depend on. The layers are: RLS = tenancy,
+guard = "may you address this row at all", the writing statement = "may you do *this* to it".
+
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-05 — RolesGuard + ResourceOwnerGuard (task #5 complete)
+
+Closes task #5. `/security-review` ran first and found nothing at HIGH/MEDIUM ≥0.8 — but it
+did surface the write-authorization constraint now recorded in its own section above, which
+is the reason these guards are scoped to reads.
+
+**`RolesGuard`** — `@Roles('owner')` / `@Roles('owner','manager')`, handler-then-controller
+precedence, skips `@Public()`. Throws 403 on mismatch, **not** 404: the caller is
+authenticated and the route exists, so we are refusing the *action*, not concealing a
+resource. Concealment is the other guard's job, where a row's existence is the secret.
+
+*A route with no `@Roles` is open to every authenticated role, deliberately.* Requiring it
+everywhere would mean annotating `/me` with all three, and every future read route likewise.
+A list that must name everyone is a list nobody maintains, and an over-broad `@Roles` added
+only to satisfy a rule is worse than none — it reads as considered when it was not.
+
+**`ResourceOwnerGuard`** — `@OwnedResource({ table, param })` runs a tenant-scoped existence
+probe and 404s on zero rows. Three load-bearing properties:
+
+- **The table name is the only interpolated SQL identifier in the codebase.** Postgres has no
+  parameter form for an identifier, so `OWNED_TABLES` is a frozen `as const` map and the
+  decorator's `table` is typed to its keys — an arbitrary string is a *compile* error, not a
+  runtime injection. The id is bound as `$1`.
+- **404, never 403.** A 403 confirms the row exists in someone else's tenant, which is the
+  id-guessing disclosure §1 forbids. §11 permits "empty result or 403"; 404 is the stricter
+  end. A test asserts cross-tenant and nonexistent responses are byte-identical.
+- **Non-uuid params 404 before the query**, so an invalid cast cannot become a 500 that
+  distinguishes "wrong shape" from "not yours".
+
+It calls `withTenant()` with an explicit context, not `db.tx()` — guards run before
+interceptors, so there is no ambient scope. Noted in the guard header so nobody "fixes" it.
+
+**`memberA1 → memberA2.id = 200` is pinned as a test.** The guard's contract is "inside your
+tenant slice", not "belongs to you". The leaderboard (§4) and relay chain (§9) both need
+members to see teammates; narrowing this to self-only would break both. Also pinned:
+member → own manager = 200 (a manager's `manager_id` is their own id), member → owner = 404
+(an owner's is NULL, matching no member predicate).
+
+**Sabotage-tested, four ways, each caught by exactly the right tests:** 403-instead-of-404 →
+9 failures; owner-style bypass ignoring `manager_id` → 7; no uuid shape check → 1 (the
+malformed-id test alone); `RolesGuard` admitting every role → 3. Verified no `SABOTAGE`
+marker survives in `src/` or `test/`.
+
+Verified: `db:check` 5/5, `test:isolation` 34/34 (no regression), `test:e2e` **100/100 across
+4 suites** (was 77), `tsc --noEmit` and `nest build` clean.
+
+Still required per CLAUDE.md §12: **human review before merge** — this is authorization and
+tenant-isolation logic, and AI review plus a clean `/security-review` is explicitly a first
+pass, not an audit.
 
 ### 2026-08-04 (later still) — Ambient tenant context (`TenantContextInterceptor` + `db.tx()`)
 

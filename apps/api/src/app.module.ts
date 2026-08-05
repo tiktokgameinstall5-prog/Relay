@@ -6,6 +6,8 @@ import { appConfig, appEnv } from './config/configuration';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { RolesGuard } from './auth/guards/roles.guard';
+import { ResourceOwnerGuard } from './auth/guards/resource-owner.guard';
 import { TenantContextInterceptor } from './auth/interceptors/tenant-context.interceptor';
 
 @Module({
@@ -46,14 +48,21 @@ import { TenantContextInterceptor } from './auth/interceptors/tenant-context.int
     AuthModule,
   ],
   providers: [
+    // Global guards run in registration order, so this sequence is load-bearing:
+    // authenticate, then narrow by role, then check the specific addressed row.
+    // Reordering would let an unauthenticated caller reach a DB query in
+    // ResourceOwnerGuard, or turn a 401 into a 403.
+    //
     // Global, so routes are authenticated by default and must opt out with
     // @Public(). Fail-closed, matching the RLS posture: a route added without
     // any auth decision is protected, not exposed.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: ResourceOwnerGuard },
     // Runs after every guard — Nest's order is guards, then interceptors, and
     // that is not configurable. So the scope this establishes is available to
-    // handlers and services but NOT to guards; a guard needing a tenant-scoped
-    // query must call withTenant() with an explicit context.
+    // handlers and services but NOT to guards; ResourceOwnerGuard therefore
+    // calls withTenant() with an explicit context rather than db.tx().
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
 })

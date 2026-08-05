@@ -9,10 +9,12 @@
  * cannot show what the scope *contains*, cannot be made @Public(), and cannot
  * demonstrate that two tx() calls in one request each see the same context.
  */
-import { Controller, Get, Inject, Module } from '@nestjs/common';
+import { Controller, Get, Inject, Module, Param } from '@nestjs/common';
 import { DbService } from '../../src/db/db.service';
 import { currentTenantScope } from '../../src/db/tenant-scope';
 import { Public } from '../../src/auth/decorators/public.decorator';
+import { Roles } from '../../src/auth/decorators/roles.decorator';
+import { OwnedResource } from '../../src/auth/decorators/owned-resource.decorator';
 
 @Controller('probe')
 export class ProbeController {
@@ -82,6 +84,66 @@ export class ProbeController {
   @Get('public-scope')
   publicScope() {
     return { scope: currentTenantScope() ?? null };
+  }
+
+  // --- RolesGuard ----------------------------------------------------------
+
+  /** The shape task #6's manager provisioning will use. */
+  @Roles('owner')
+  @Get('owner-only')
+  ownerOnly() {
+    return { ok: true };
+  }
+
+  /** The shape task #7's team creation will use. */
+  @Roles('owner', 'manager')
+  @Get('owner-or-manager')
+  ownerOrManager() {
+    return { ok: true };
+  }
+
+  /** No @Roles: reachable by any authenticated role, which /me relies on. */
+  @Get('any-role')
+  anyRole() {
+    return { ok: true };
+  }
+
+  /**
+   * @Roles on a @Public() route. Contrived, but it pins the precedence: public
+   * wins, because JwtAuthGuard never populates request.user and a role check
+   * against nobody has no sensible answer.
+   */
+  @Public()
+  @Roles('owner')
+  @Get('public-but-owner-only')
+  publicButOwnerOnly() {
+    return { ok: true };
+  }
+
+  // --- ResourceOwnerGuard --------------------------------------------------
+
+  /**
+   * The handler is trivial on purpose: reaching it at all IS the assertion. If
+   * the guard let a cross-tenant id through, this returns 200 and the test fails
+   * — no handler logic needed to detect it.
+   */
+  @Get('team/:id')
+  @OwnedResource({ table: 'team', param: 'id' })
+  team(@Param('id') id: string) {
+    return { id };
+  }
+
+  @Get('user/:id')
+  @OwnedResource({ table: 'user', param: 'id' })
+  user(@Param('id') id: string) {
+    return { id };
+  }
+
+  /** Same table, a differently-named param — proves `param` is honoured. */
+  @Get('team-alt/:teamId')
+  @OwnedResource({ table: 'team', param: 'teamId' })
+  teamAlt(@Param('teamId') teamId: string) {
+    return { teamId };
   }
 }
 
