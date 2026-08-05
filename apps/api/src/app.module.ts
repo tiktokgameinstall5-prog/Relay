@@ -40,6 +40,11 @@ import { TenantContextInterceptor } from './auth/interceptors/tenant-context.int
             },
             // Named config for the signup route's @Throttle({ signup: ... }).
             { name: 'signup', limit: 10, ttl: 3_600_000 },
+            // Manager provisioning: 20/hour keyed on the authenticated Owner
+            // rather than IP. Provisioning is a deliberate human act; 20/hour
+            // is far above real use and well below what makes a compromised
+            // Owner token useful for mass account creation.
+            { name: 'provisioning', limit: 20, ttl: 3_600_000 },
           ],
         };
       },

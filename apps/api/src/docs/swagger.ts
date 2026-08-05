@@ -43,7 +43,7 @@ export function setupSwagger(app: INestApplication): void {
         '4. `GET /api/me` now works — it returns the caller\'s own row, read',
         '   through the tenant context that every RLS policy checks.',
         '',
-        '`POST /api/auth/owner/login` is rate-limited to 5 attempts per 15 minutes,',
+        '`POST /api/auth/login` is rate-limited to 5 attempts per 15 minutes,',
         'keyed on email + IP. Repeated failed attempts here will return 429.',
       ].join('\n'),
     )

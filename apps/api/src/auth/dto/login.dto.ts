@@ -5,7 +5,14 @@ import { ApiProperty } from '@nestjs/swagger';
 const normaliseEmail = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim().toLowerCase() : value;
 
-export class OwnerLoginDto {
+/**
+ * Credentials for POST /api/auth/login.
+ *
+ * Not Owner-specific: Managers set a password during first login and use this
+ * same route afterwards, as will Members from task #7. The role is never part of
+ * the request — it is read from the user row server-side.
+ */
+export class LoginDto {
   @ApiProperty({ format: 'email', maxLength: 254, example: 'ada@acme.test' })
   @IsEmail()
   @Transform(normaliseEmail)

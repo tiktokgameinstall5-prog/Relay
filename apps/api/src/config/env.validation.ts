@@ -47,7 +47,29 @@ export interface AppEnv {
    * there has to be a deliberate, greppable act.
    */
   API_DOCS_ENABLED: boolean;
+  /**
+   * How long an issued passcode stays valid. CLAUDE.md §1 says "~72h".
+   *
+   * Capped at a week: a passcode is a single-factor credential sitting in an
+   * inbox, and its whole security argument is that the window is short.
+   */
+  PASSCODE_TTL_HOURS: number;
+  /**
+   * How invite email is delivered.
+   *
+   * `console` renders the message to the log — including the passcode, which is
+   * exactly why validateEnv() refuses to boot production with it. `smtp` is not
+   * implemented yet (task #8); it is accepted as a value here only so the
+   * refusal message can be specific about that rather than reading as a typo.
+   */
+  MAIL_DRIVER: MailDriver;
+  /** From-address on invite email. Unused by the console driver. */
+  MAIL_FROM: string;
+  /** Absolute base URL used to build the invite link. */
+  APP_BASE_URL: string;
 }
+
+export type MailDriver = 'console' | 'smtp';
 
 function fail(problems: string[]): never {
   throw new Error(
@@ -157,6 +179,50 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     );
   }
 
+  // --- Mail driver validation ---------------------------------------------
+  const mailDriver = (source.MAIL_DRIVER ?? 'console').trim().toLowerCase();
+  if (mailDriver !== 'console' && mailDriver !== 'smtp') {
+    problems.push(`MAIL_DRIVER must be "console" or "smtp", got "${source.MAIL_DRIVER}".`);
+  }
+
+  // Console driver prints passcodes to stdout — live credentials in logs.
+  // Production MUST use smtp (or a future driver), never console.
+  if (nodeEnv === 'production' && mailDriver === 'console') {
+    problems.push(
+      'MAIL_DRIVER=console in production would print passcodes to logs. Use smtp.',
+    );
+  }
+
+  // smtp is not implemented yet (task #8). Refuse to boot with it so the
+  // failure is explicit rather than a silent no-op or a runtime error when the
+  // first invite is sent.
+  if (mailDriver === 'smtp') {
+    problems.push(
+      'MAIL_DRIVER=smtp is not implemented yet. Use console for development.',
+    );
+  }
+
+  const mailFrom = source.MAIL_FROM ?? '';
+  // Console driver ignores MAIL_FROM, so don't require it there.
+  if (mailDriver !== 'console' && mailFrom.trim() === '') {
+    problems.push('MAIL_FROM is required when MAIL_DRIVER is not console.');
+  }
+
+  // --- APP_BASE_URL validation ---------------------------------------------
+  const appBaseUrl = source.APP_BASE_URL;
+  if (!appBaseUrl) {
+    problems.push('APP_BASE_URL is not set.');
+  } else {
+    try {
+      const url = new URL(appBaseUrl);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        problems.push(`APP_BASE_URL must be http(s), got "${url.protocol}".`);
+      }
+    } catch {
+      problems.push(`APP_BASE_URL is not a valid URL: "${appBaseUrl}".`);
+    }
+  }
+
   const env: AppEnv = {
     NODE_ENV: nodeEnv,
     PORT: intInRange('PORT', source.PORT, 3000, 1, 65535, problems),
@@ -189,6 +255,17 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       nodeEnv !== 'production',
       problems,
     ),
+    PASSCODE_TTL_HOURS: intInRange(
+      'PASSCODE_TTL_HOURS',
+      source.PASSCODE_TTL_HOURS,
+      72,
+      1,
+      168,
+      problems,
+    ),
+    MAIL_DRIVER: mailDriver as MailDriver,
+    MAIL_FROM: mailFrom.trim(),
+    APP_BASE_URL: appBaseUrl ?? '',
   };
 
   if (problems.length > 0) fail(problems);

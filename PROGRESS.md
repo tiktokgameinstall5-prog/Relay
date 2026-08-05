@@ -4,7 +4,7 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 1 — Auth & Tenancy (in progress — Owner signup/login/JWT done, provisioning not started)
+Phase 1 — Auth & Tenancy (in progress — Owner + Manager auth done; Member provisioning next)
 
 ## Phase checklist
 
@@ -17,8 +17,8 @@ Phase 1 — Auth & Tenancy (in progress — Owner signup/login/JWT done, provisi
   - [x] JWT strategy + `/me` (TenantContext type, DbService.withTenant, JwtAuthGuard)
   - [x] Login rate limiting (email+IP, 5 / 15 min)
   - [x] TenantContext interceptor + ambient `db.tx()` (awaiting human review, §12)
-  - [ ] RolesGuard + ResourceOwnerGuard
-  - [ ] Manager provisioning (Owner-only, passcode/invite)
+  - [x] RolesGuard + ResourceOwnerGuard (awaiting human review, §12)
+  - [x] Manager provisioning (Owner-only, passcode/invite) + first login (awaiting human review, §12)
   - [ ] Member provisioning (Manager/Owner, scoped to team)
   - [ ] HTTP-layer isolation test (the §11 gate — DB layer alone is only half)
 - [ ] Phase 2 — Workflow Engine (core)
@@ -162,6 +162,93 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-05 (later) — Manager provisioning, mailer, manager first login (task #6 complete)
+
+An Owner can now `POST /api/auth/managers {name, email}`; the manager receives a single-use
+passcode by email and activates with `POST /api/auth/manager/first-login
+{email, passcode, newPassword}`, after which they log in like anyone else.
+
+**Two spec interpretations recorded here, because both resolve real ambiguities in CLAUDE.md §1.**
+
+*First login is atomic — the password is required, not optional.* §1 says passcodes are
+single-use **and** that a manager "may set a permanent password on first login". If setting one
+were optional, consuming the passcode would leave the account with no usable credential at all
+— permanently locked out with no self-service path back in. Reading "may" as "may choose the
+password" rather than "may skip it" resolves the contradiction without inventing a second token
+type (a set-password token would have to be refused by every guard everywhere else — scope-
+confusion risk for no gain). One request, one transaction: passcode consumed and password set
+together, or neither.
+
+*Production refuses to boot with `MAIL_DRIVER=console`.* The console driver renders the whole
+message to the log, passcode included — that is the point in development, where there is no
+inbox, and exactly why it must not run in production, where it would deposit a live credential
+in the log aggregator for every manager and member ever invited. `.env.example` warned about
+this in prose; `env.validation.ts` now enforces it. `MAIL_DRIVER=smtp` also refuses to boot
+(not implemented — `.claude/settings.json` denies outbound network calls, so an SMTP transport
+would ship untested on the invite path). Net effect: production cannot boot at all until task
+#8 implements SMTP, which is correct, since production has no mail path yet.
+
+**The login route widened: `/api/auth/owner/login` → `/api/auth/login`,** and
+`ownerLogin` → `passwordLogin`. The old `role !== 'owner'` rejection is gone on purpose: after
+first login a manager logs in here, and a role check would lock them out permanently. The
+property that actually protected the passcode flow was never the role check — it is
+`password_hash IS NULL`. A provisioned-but-not-activated manager has no hash, so no password
+can ever match and first-login cannot be skipped by guessing one. `auth.e2e-spec.ts` now pins
+both halves: a provisioned manager is refused (401, byte-identical to an unknown address), an
+activated one is accepted (200, `role: 'manager'` read from the row, never the request).
+
+**Provisioning is throttled at 20/hour keyed on the authenticated Owner,** not the IP —
+`OwnerThrottlerGuard` overrides `getTracker()` to key on `request.user.userId`, which
+`JwtStrategy.validate()` builds from a fresh DB read rather than from token claims. Note the
+`@SkipThrottle({login: true, signup: true})` on that route is load-bearing, not tidiness: a
+`ThrottlerGuard` evaluates **every** throttler registered in AppModule, so without the skips
+this route would also be capped at the login limit of 5 per 15 minutes.
+
+**Passcodes are bcrypt-hashed, never SHA-256.** 10 chars over a 55-char ambiguity-free alphabet
+is ~57 bits — offline-brute-forceable behind a fast hash from a database dump, not behind
+bcrypt. §1 only says "hashed at rest"; this is the strict reading, and it reuses the cost
+already validated in env. Generation uses `crypto.randomInt(alphabet.length)`, not
+`randomBytes(1) % len`, which would bias toward the first `256 % 55` characters.
+
+**Defense-in-depth finding from the sabotage run — worth keeping.** Sabotage #1 (drop
+`passcode_used_at IS NULL` from the first-login UPDATE's WHERE clause) failed **nothing**. The
+JS guard `row.passcode_used_at !== null` shadows it on sequential replay, so the replay test
+stayed green. A concurrency test was added, and even then the sabotage passed — because
+`password_hash IS NULL` and `passcode_expires_at > now()` (paired with
+`SET passcode_expires_at = NULL`) are each *independently* sufficient to make the update
+single-winner. Only removing all three broke it. So the WHERE clause is genuinely three-way
+redundant rather than one load-bearing condition. The lesson recorded in the test file: a
+sequential replay test does not test a race, and a suite that stays green through a sabotage
+is not a suite.
+
+Sabotage #2 (return the passcode in the 201 body) turned out to be caught at **compile time**
+by `createManager`'s explicit return type — a stronger guarantee than a runtime test. Verified
+that the runtime assertion also bites once the type is widened. The other three behaved as
+planned: SHA-256 instead of bcrypt fails 2 tests, removing `@Roles('owner')` fails the
+manager/member 403 tests, and putting the passcode in the invite URL fails the URL test. All
+reverted; `grep -rn SABOTAGE` is clean.
+
+Migration `0004_passcode_lookup.sql` drops and recreates `auth_lookup_by_email` three columns
+wider (`passcode_hash`, `passcode_expires_at`, `passcode_used_at`). Postgres cannot
+`CREATE OR REPLACE` a function with a changed `RETURNS TABLE` list, and applied migrations are
+checksum-immutable, so a new file was the only route. The hash must reach Node so bcrypt runs
+unconditionally — comparing in SQL would reintroduce the timing oracle 0002 exists to avoid.
+Ownership stays `relay_migrator`, so 0003's `user_definer_lookup` policy still applies.
+
+Verified: `db:migrate` 0000–0004 applied, `db:check` 5/5, `test:isolation` 34/34,
+`test:e2e` **122/122** (5 suites), `tsc --noEmit` and `nest build` clean.
+
+Per CLAUDE.md §12 this is authentication code and **needs human review before merge**.
+`/security-review` has not been run on this module yet.
+
+Deferred to task #8 by design: passcode regeneration by the issuer (§1), refresh-token
+rotation/logout, and making the signup throttle real — `@Throttle({signup: ...})` on
+`POST /api/auth/owner/signup` is currently **inert** because no `ThrottlerGuard` is attached
+there; attaching one would immediately fail 13 e2e tests that create more than 10 orgs from
+one IP, so the fix is an env-configurable limit rather than a decorator. Member provisioning
+and team creation are task #7.
+
 
 ### 2026-08-05 — RolesGuard + ResourceOwnerGuard (task #5 complete)
 

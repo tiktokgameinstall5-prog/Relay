@@ -137,7 +137,7 @@ describe('POST /api/auth/owner/signup', () => {
 
     // And the normalised form is what logs in.
     await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email: 'ada@acme.test', password: OWNER.password })
       .expect(200);
   });
@@ -173,12 +173,12 @@ describe('POST /api/auth/owner/signup', () => {
   });
 });
 
-describe('POST /api/auth/owner/login', () => {
+describe('POST /api/auth/login', () => {
   it('authenticates with the correct password', async () => {
     const email = 'login.happy@acme.test';
     await signup({ email });
     const res = await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email, password: OWNER.password })
       .expect(200);
 
@@ -190,7 +190,7 @@ describe('POST /api/auth/owner/login', () => {
     const email = 'login.wrongpw@acme.test';
     await signup({ email });
     await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email, password: 'WrongHorse!9xy' })
       .expect(401);
   });
@@ -200,11 +200,11 @@ describe('POST /api/auth/owner/login', () => {
     await signup({ email });
 
     const unknownEmail = await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email: 'nobody@acme.test', password: OWNER.password });
 
     const wrongPassword = await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email, password: 'WrongHorse!9xy' });
 
     // If these differ in any way, the endpoint is an account-enumeration oracle:
@@ -229,24 +229,71 @@ describe('POST /api/auth/owner/login', () => {
     );
 
     const inactive = await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email, password: OWNER.password })
       .expect(401);
 
     const wrongPassword = await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email: 'other.owner@acme.test', password: 'WrongHorse!9xy' })
       .expect(401);
 
     expect(inactive.body).toEqual(wrongPassword.body);
   });
 
-  it('refuses a manager on the owner-only route', async () => {
+  /**
+   * This test previously asserted that ANY manager is refused here, back when
+   * the route was /api/auth/owner/login and the service rejected
+   * `role !== 'owner'`. Task #6 removes that rejection on purpose: once a
+   * manager has consumed their passcode and set a password, this is the route
+   * they log in through, and a role check would lock them out permanently.
+   *
+   * So the property under test narrows rather than disappears. What must stay
+   * true is that the role check was never what protected the passcode flow —
+   * `password_hash IS NULL` is. A provisioned-but-not-activated manager has no
+   * hash, so no password can ever match, and first-login cannot be skipped by
+   * guessing one.
+   */
+  it('refuses a provisioned manager who has not completed first login', async () => {
     const body = await signup();
 
-    // A manager in the same org, with the SAME password hash as the owner, so
-    // that the only thing which can reject the login is the role check.
     const managerEmail = 'mallory.manager@acme.test';
+    const ownerCtx = { orgId: body.user.orgId, role: 'owner' as const, managerId: null };
+
+    await withTenant(ownerCtx, async (c) => {
+      // The id must be known before the INSERT: user_manager_id_invariant
+      // requires manager_id = id for a manager, within the same row.
+      const { rows } = await c.query<{ id: string }>('SELECT gen_random_uuid() AS id');
+      const managerId = rows[0].id;
+      // password_hash omitted — exactly the state createManager() leaves behind.
+      await c.query(
+        `INSERT INTO "user" (id, org_id, role, name, email, manager_id)
+         VALUES ($1, $2, 'manager', 'Mallory Manager', $3, $1)`,
+        [managerId, body.user.orgId, managerEmail],
+      );
+    });
+
+    const notActivated = await http
+      .post('/api/auth/login')
+      .send({ email: managerEmail, password: OWNER.password })
+      .expect(401);
+
+    // And indistinguishable from an unknown address, so the response does not
+    // confirm that an invite for this email is outstanding.
+    const unknown = await http
+      .post('/api/auth/login')
+      .send({ email: 'nobody.here@acme.test', password: OWNER.password })
+      .expect(401);
+
+    expect(notActivated.body).toEqual(unknown.body);
+  });
+
+  it('accepts a manager who has completed first login', async () => {
+    const body = await signup();
+
+    // The same hash as the owner, so the ONLY thing that differs from the test
+    // above is the presence of a password_hash — which is what now decides it.
+    const managerEmail = 'morgan.manager@acme.test';
     const ownerCtx = { orgId: body.user.orgId, role: 'owner' as const, managerId: null };
 
     const passwordHash = await withTenant(ownerCtx, async (c) => {
@@ -258,23 +305,27 @@ describe('POST /api/auth/owner/login', () => {
     });
 
     await withTenant(ownerCtx, async (c) => {
-      // The id must be known before the INSERT: user_manager_id_invariant
-      // requires manager_id = id for a manager, within the same row.
       const { rows } = await c.query<{ id: string }>('SELECT gen_random_uuid() AS id');
       const managerId = rows[0].id;
       await c.query(
         `INSERT INTO "user" (id, org_id, role, name, email, password_hash, manager_id)
-         VALUES ($1, $2, 'manager', 'Mallory Manager', $3, $4, $1)`,
+         VALUES ($1, $2, 'manager', 'Morgan Manager', $3, $4, $1)`,
         [managerId, body.user.orgId, managerEmail, passwordHash],
       );
     });
 
-    // Managers authenticate through the passcode flow (task #6). Accepting a
-    // password here would quietly bypass it.
-    await http
-      .post('/api/auth/owner/login')
+    const res = await http
+      .post('/api/auth/login')
       .send({ email: managerEmail, password: OWNER.password })
-      .expect(401);
+      .expect(200);
+
+    // The role comes from the row, never from the request.
+    expect(res.body.user.role).toBe('manager');
+
+    await http
+      .get('/api/me')
+      .set('Authorization', `Bearer ${res.body.accessToken}`)
+      .expect(200);
   });
 });
 
@@ -360,7 +411,7 @@ describe('login rate limiting (5 attempts / 15 min, keyed on email + IP)', () =>
     const statuses: number[] = [];
     for (let i = 0; i < 7; i++) {
       const res = await http
-        .post('/api/auth/owner/login')
+        .post('/api/auth/login')
         .send({ email, password: 'WrongHorse!9xy' });
       statuses.push(res.status);
     }
@@ -379,7 +430,7 @@ describe('login rate limiting (5 attempts / 15 min, keyed on email + IP)', () =>
     await signup({ email: victimEmail });
 
     await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email: victimEmail, password: OWNER.password })
       .expect(200);
   });
@@ -389,13 +440,13 @@ describe('login rate limiting (5 attempts / 15 min, keyed on email + IP)', () =>
     await signup({ email });
 
     for (let i = 0; i < 5; i++) {
-      await http.post('/api/auth/owner/login').send({ email, password: 'WrongHorse!9xy' });
+      await http.post('/api/auth/login').send({ email, password: 'WrongHorse!9xy' });
     }
 
     // Varying the casing must not buy a fresh budget — the key is normalised
     // before hashing, so this is the same bucket, already exhausted.
     await http
-      .post('/api/auth/owner/login')
+      .post('/api/auth/login')
       .send({ email: 'CASE.TARGET@ACME.TEST', password: 'WrongHorse!9xy' })
       .expect(429);
   });

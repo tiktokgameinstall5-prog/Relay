@@ -53,7 +53,7 @@ check('signup returns 201', signup.status === 201, `got ${signup.status} ${JSON.
 check('signup returns an access token', typeof signup.body?.accessToken === 'string');
 check('signup echoes role owner', signup.body?.user?.role === 'owner');
 
-const login = await call('POST', '/auth/owner/login', { body: { email, password } });
+const login = await call('POST', '/auth/login', { body: { email, password } });
 check('login returns 200', login.status === 200, `got ${login.status} ${JSON.stringify(login.body)}`);
 
 const token = login.body?.accessToken;
@@ -82,7 +82,7 @@ check(
 const anon = await call('GET', '/me');
 check('GET /me without a token returns 401', anon.status === 401, `got ${anon.status}`);
 
-const wrong = await call('POST', '/auth/owner/login', { body: { email, password: 'wrong-password' } });
+const wrong = await call('POST', '/auth/login', { body: { email, password: 'wrong-password' } });
 check('login with a wrong password returns 401', wrong.status === 401, `got ${wrong.status}`);
 
 console.log(failures === 0 ? '\nsmoke: all checks passed' : `\nsmoke: ${failures} check(s) failed`);
