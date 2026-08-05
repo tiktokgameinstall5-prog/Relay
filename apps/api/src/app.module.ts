@@ -1,11 +1,12 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { appConfig, appEnv } from './config/configuration';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { TenantContextInterceptor } from './auth/interceptors/tenant-context.interceptor';
 
 @Module({
   imports: [
@@ -49,6 +50,11 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     // @Public(). Fail-closed, matching the RLS posture: a route added without
     // any auth decision is protected, not exposed.
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Runs after every guard — Nest's order is guards, then interceptors, and
+    // that is not configurable. So the scope this establishes is available to
+    // handlers and services but NOT to guards; a guard needing a tenant-scoped
+    // query must call withTenant() with an explicit context.
+    { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
   ],
 })
 export class AppModule {}

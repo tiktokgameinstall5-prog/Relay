@@ -16,7 +16,8 @@ Phase 1 — Auth & Tenancy (in progress — Owner signup/login/JWT done, provisi
   - [x] Owner self-signup + org creation
   - [x] JWT strategy + `/me` (TenantContext type, DbService.withTenant, JwtAuthGuard)
   - [x] Login rate limiting (email+IP, 5 / 15 min)
-  - [ ] TenantContext interceptor + remaining two guards (RolesGuard, ResourceOwnerGuard)
+  - [x] TenantContext interceptor + ambient `db.tx()` (awaiting human review, §12)
+  - [ ] RolesGuard + ResourceOwnerGuard
   - [ ] Manager provisioning (Owner-only, passcode/invite)
   - [ ] Member provisioning (Manager/Owner, scoped to team)
   - [ ] HTTP-layer isolation test (the §11 gate — DB layer alone is only half)
@@ -116,6 +117,64 @@ Production needs freshly generated secrets from a secret manager, never carried 
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-04 (later still) — Ambient tenant context (`TenantContextInterceptor` + `db.tx()`)
+
+First half of task #5. Services no longer receive a `CurrentUser` purely to re-derive
+scoping: an `AsyncLocalStorage` scope is established per authenticated request and
+`db.tx()` reads it. `me.service.ts` is converted as the proof on a real route.
+The guards (`RolesGuard`, `ResourceOwnerGuard`) are **not** in this change — still open.
+
+**What AsyncLocalStorage carries is the `TenantContext`, not a `PoolClient`.** A
+request-long transaction would pin 1 of the pool's 10 connections across every non-DB
+pause in a handler — bcrypt cost 12 on login (~300ms), the mailer in #6, and S3 multipart
+video upload in Phase 3, where it would be held open for minutes. Atomicity is per-`tx()`
+call, which is the shape the work already has: the Phase 2 relay forward (complete step N,
+activate N+1, stamp timestamps, write `audit_log`) is one `tx()`.
+
+**Guards run before interceptors, and that is not configurable.** So the ALS scope is
+available to handlers and services but *not* to guards. `ResourceOwnerGuard` will have to
+call `withTenant()` with an explicit context — noted here and in `app.module.ts` so nobody
+later "fixes" it into a `db.tx()` that would throw. `withTenant()` stays public for that
+and for signup, where the org does not exist yet and the transaction *asserts* the context.
+
+**No scope on `@Public()` routes.** `db.tx()` throws there rather than querying
+context-free — a context-free query returns zero rows under FORCE RLS, which a handler
+could easily read as "no data" instead of "misconfigured". Fail loud, not open.
+
+**Rename recorded here because the migration cannot be edited.** `0001_rls.sql:9` says
+"set transaction-locally by TenantTransactionInterceptor". The component shipped as
+`TenantContextInterceptor` — it no longer owns a transaction. `migrate.ts` throws when an
+applied migration's checksum changes and the checksum is over LF-normalised content, so
+even a comment-only edit trips it. Applied migrations are immutable history.
+
+**A plan claim was disproved by sabotage-testing, and the plan has been corrected.** The
+plan asserted that the naive `runInTenantScope(ctx, () => next.handle())` loses the scope
+before the handler runs (because the Observable body executes on subscription), and that
+the new tests catch a refactor back to it. Neither holds on Nest 11: `InterceptorsConsumer`
+wraps each step in `defer(AsyncResource.bind(...))` and eagerly calls the terminal handler
+inside that bound scope, with an in-source comment saying it is deliberate so
+AsyncLocalStorage is inherited. Sabotage run: naive form → **14/14 still passed**; scope
+removed entirely → **10 of 14 failed**, so the suite does bite, it just cannot tell those
+two forms apart. The explicit-subscribe form still ships — not because a test enforces it,
+but because it does not depend on a framework internal that is no part of the
+`NestInterceptor` contract. The interceptor header and the spec's header state this
+accurately; do not re-add the "a test catches this" claim.
+
+Test scaffolding, both **test-only** and imported by the spec's `TestingModule` rather than
+by `AppModule`, so neither can ship: `test/helpers/token.ts` mints an access token for a
+seeded user (needed because managers/members have no login route until #6 — not a shortcut
+around auth, since `JwtStrategy.validate()` re-reads the row and the only claim that
+matters is `sub`), and `test/helpers/probe.module.ts` exposes routes that observe the scope
+at both the handler and the *database* level. The DB-level probe is the one that matters: a
+scope object the handler can read proves nothing if the session variables end up unset.
+
+Verified: `test:isolation` 34/34 (no regression), `test:e2e` 77/77 across 3 suites,
+`tsc --noEmit` clean, `nest build` clean. The `ExceptionsHandler` stack trace in the e2e
+output is expected — it is the `public-tx` test asserting `db.tx()` throws.
+
+Still required before merge, per CLAUDE.md §12: **human review** (this is tenant-isolation
+logic, AI review is explicitly not sufficient) and `/security-review`. Neither has run.
 
 ### 2026-08-04 (later) — Interactive API docs at `/api/docs`
 

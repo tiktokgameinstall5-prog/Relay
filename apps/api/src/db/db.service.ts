@@ -23,6 +23,7 @@ import { Pool, type PoolClient } from 'pg';
 import { ConfigService } from '@nestjs/config';
 import { appEnv } from '../config/configuration';
 import type { TenantContext } from './tenant-context';
+import { requireTenantScope } from './tenant-scope';
 
 @Injectable()
 export class DbService implements OnModuleInit, OnModuleDestroy {
@@ -98,6 +99,29 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     } finally {
       client.release();
     }
+  }
+
+  /**
+   * `withTenant`, using the ambient context of the current request.
+   *
+   * This is what services should call. It exists so a service never has to
+   * receive a CurrentUser purely to re-derive scoping — forgetting to thread it
+   * is the failure mode, and by Phase 2 that would be every workflow method.
+   *
+   * Throws if there is no scope, which means a tenant-scoped query was attempted
+   * outside an authenticated request: on a @Public() route, in a background job,
+   * or before TenantContextInterceptor ran (guards, notably, run first). Those
+   * callers must pass a context explicitly via withTenant.
+   *
+   * Deliberately NOT a request-long transaction. Holding a client for the whole
+   * request would pin one of the pool's 10 connections across every non-DB pause
+   * in a handler — bcrypt at cost 12 on login, the mailer, S3 multipart upload in
+   * Phase 3. Atomicity is per-tx() call, which is the natural unit anyway: the
+   * Phase 2 relay forward (complete step N, activate N+1, stamp timestamps, write
+   * audit_log) is one tx() call, exactly as signup is one withTenant() call.
+   */
+  async tx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    return this.withTenant(requireTenantScope(), fn);
   }
 
   /**

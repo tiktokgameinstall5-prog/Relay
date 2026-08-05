@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { DbService } from '../db/db.service';
-import { type CurrentUser, tenantContextOf, type UserRole } from '../db/tenant-context';
+import { type CurrentUser, type UserRole } from '../db/tenant-context';
 
 export interface MeResponse {
   id: string;
@@ -24,15 +24,21 @@ export class MeService {
   /**
    * Read the caller's own row through the tenant context.
    *
-   * Note that this goes through withTenant even though the row belongs to the
-   * caller and lookupById() could have returned it context-free. That is the
-   * point: the definer lookups are a pre-auth exception, and using one here
-   * would normalise reaching for them once a context is available. This is also
-   * the only place in the request path where the ordinary RLS route is exercised
-   * end-to-end, so if the tenant context were built wrongly, /me breaks loudly.
+   * Note that this goes through the ordinary RLS path even though the row
+   * belongs to the caller and lookupById() could have returned it context-free.
+   * That is the point: the definer lookups are a pre-auth exception, and using
+   * one here would normalise reaching for them once a context is available. This
+   * is also the only place in the request path where the ordinary RLS route is
+   * exercised end-to-end, so if the tenant context were built wrongly, /me breaks
+   * loudly.
+   *
+   * The context is ambient — TenantContextInterceptor put it there — so this
+   * calls db.tx() rather than withTenant(tenantContextOf(user), ...). `user` is
+   * still a parameter because the query needs the caller's own id, which the
+   * tenant predicate does not carry.
    */
   async getProfile(user: CurrentUser): Promise<MeResponse> {
-    const row = await this.db.withTenant(tenantContextOf(user), async (c) => {
+    const row = await this.db.tx(async (c) => {
       const { rows } = await c.query<{
         id: string;
         org_id: string;
