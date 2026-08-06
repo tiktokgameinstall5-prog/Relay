@@ -1,8 +1,9 @@
 @import 'tailwindcss';
 
 /* Tailwind 4 scans content via @source rather than a config file. Paths are
-   relative to THIS file (apps/web/src/), so the monorepo root is three up. */
-@source '../../../workspace-relay-prototype.jsx';
+   relative to THIS file (apps/web/src/). The prototype at the repo root is no
+   longer scanned — it is the design reference, not shipped code. */
+@source './';
 
 /* These @theme values are the CLAUDE.md §9 design tokens, mirroring the `C`
    object at the top of workspace-relay-prototype.jsx so utilities and inline

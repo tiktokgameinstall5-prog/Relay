@@ -3,21 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Relay web client — Phase 1 renders the design prototype only",
+  "description": "Relay web client — auth screens wired to the Phase 1 API",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "lucide-react": "^1.28.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "react-router-dom": "^7.9.4"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.0.5",
     "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
     "vite": "^8.2.0"
   }
 }
