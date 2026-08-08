@@ -321,7 +321,7 @@ describe('POST /api/auth/manager/first-login', () => {
 
     const wrong = await http
       .post('/api/auth/manager/first-login')
-      .send({ email: managerEmail, passcode: 'WRNGXYZ99', newPassword: NEW_PASSWORD })
+      .send({ email: managerEmail, passcode: 'WXYZABC99', newPassword: NEW_PASSWORD })
       .expect(401);
 
     expect(replay.body).toEqual(wrong.body);
@@ -370,7 +370,7 @@ describe('POST /api/auth/manager/first-login', () => {
   it('refuses wrong passcode (401)', async () => {
     await http
       .post('/api/auth/manager/first-login')
-      .send({ email: managerEmail, passcode: 'WRNGXYZ99', newPassword: NEW_PASSWORD })
+      .send({ email: managerEmail, passcode: 'WXYZABC99', newPassword: NEW_PASSWORD })
       .expect(401);
   });
 
@@ -382,7 +382,7 @@ describe('POST /api/auth/manager/first-login', () => {
 
     const wrong = await http
       .post('/api/auth/manager/first-login')
-      .send({ email: managerEmail, passcode: 'WRNGXYZ99', newPassword: NEW_PASSWORD })
+      .send({ email: managerEmail, passcode: 'WXYZABC99', newPassword: NEW_PASSWORD })
       .expect(401);
 
     expect(unknown.body).toEqual(wrong.body);
