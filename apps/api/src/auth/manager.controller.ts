@@ -30,7 +30,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthService, type AuthResult } from './auth.service';
 import { CreateManagerDto } from './dto/create-manager.dto';
-import { ManagerFirstLoginDto } from './dto/manager-first-login.dto';
+import { FirstLoginDto } from './dto/first-login.dto';
 import { AuthResultDto, ManagerProvisionedDto } from './dto/api-response.dto';
 import { Public } from './decorators/public.decorator';
 import { Roles } from './decorators/roles.decorator';
@@ -86,6 +86,12 @@ export class ManagerController {
   /**
    * 200, not 201: this creates no resource, it activates an existing one.
    *
+   * DEPRECATED ALIAS. The canonical activation route is the role-neutral
+   * `POST /api/auth/first-login` on MemberController — managers and members
+   * activate identically. This path is kept so the existing web client keeps
+   * working; it delegates to the exact same service method. Prefer the canonical
+   * route for new callers.
+   *
    * @Public() because the caller has no token yet — that is the entire point of
    * the passcode. LoginThrottlerGuard keys on email + IP and reads req.body.email,
    * which this route carries, so it needs no change to cover this path.
@@ -93,19 +99,20 @@ export class ManagerController {
    * Skips the other named throttlers for the same reason as above.
    */
   @ApiOperation({
-    summary: 'Consume an invite passcode and set a permanent password',
+    summary: 'Consume an invite passcode and set a permanent password (alias)',
     description:
-      'One atomic step: the passcode is consumed and the password set in a ' +
-      'single transaction, so an account can never be left with the passcode ' +
-      'spent and no password. The passcode is single-use — replaying it ' +
-      'returns the same 401 as a wrong one. After this, sign in at ' +
+      'Deprecated alias of `POST /api/auth/first-login`, kept for the existing ' +
+      'web client. One atomic step: the passcode is consumed and the password ' +
+      'set in a single transaction, so an account can never be left with the ' +
+      'passcode spent and no password. The passcode is single-use — replaying ' +
+      'it returns the same 401 as a wrong one. After this, sign in at ' +
       '`POST /api/auth/login`.',
   })
   @ApiOkResponse({ type: AuthResultDto })
   @ApiUnauthorizedResponse({
     description:
       'Unknown email, wrong passcode, expired passcode, an already-used ' +
-      'passcode, and a non-Manager account are one identical response.',
+      'passcode, and a non-invited account are one identical response.',
   })
   @ApiTooManyRequestsResponse({
     description: '5 attempts per 15 minutes, keyed on email + IP.',
@@ -115,7 +122,7 @@ export class ManagerController {
   @UseGuards(LoginThrottlerGuard)
   @HttpCode(HttpStatus.OK)
   @Post('manager/first-login')
-  managerFirstLogin(@Body() dto: ManagerFirstLoginDto): Promise<AuthResult> {
-    return this.auth.managerFirstLogin(dto);
+  managerFirstLogin(@Body() dto: FirstLoginDto): Promise<AuthResult> {
+    return this.auth.firstLogin(dto);
   }
 }

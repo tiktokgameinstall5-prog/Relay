@@ -14,6 +14,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -31,7 +32,9 @@ import { appEnv } from '../config/configuration';
 import type { OwnerSignupDto } from './dto/signup.dto';
 import type { LoginDto } from './dto/login.dto';
 import type { CreateManagerDto } from './dto/create-manager.dto';
-import type { ManagerFirstLoginDto } from './dto/manager-first-login.dto';
+import type { CreateMemberDto } from './dto/create-member.dto';
+import type { CreateTeamDto } from './dto/create-team.dto';
+import type { FirstLoginDto } from './dto/first-login.dto';
 import { MailerService } from '../mail/mailer.service';
 import { generatePasscode } from './passcode';
 import { renderInviteEmail } from '../mail/templates/invite';
@@ -250,23 +253,12 @@ export class AuthService {
     // Mail happens after commit so a slow mailer never holds the transaction
     // open, and a mail failure returns 201 with inviteEmailSent: false rather
     // than rolling back a created manager.
-    let inviteEmailSent = true;
-    try {
-      const inviteLink = `${this.appBaseUrl}/invite?email=${encodeURIComponent(dto.email)}`;
-      const { subject, text } = renderInviteEmail({
-        recipientName: dto.name,
-        organizationName,
-        passcode,
-        inviteLink,
-        ttlHours: this.passcodeTtlHours,
-      });
-      await this.mailer.send({ to: dto.email, subject, text });
-    } catch (err) {
-      this.logger.error(
-        `Invite email to ${dto.email} failed: ${(err as Error).message}`,
-      );
-      inviteEmailSent = false;
-    }
+    const inviteEmailSent = await this.sendInviteEmail({
+      to: dto.email,
+      recipientName: dto.name,
+      organizationName,
+      passcode,
+    });
 
     return {
       id: userId,
@@ -274,6 +266,235 @@ export class AuthService {
       email: dto.email,
       role: 'manager',
       status: 'active',
+      passcodeExpiresAt: expiresAt,
+      inviteEmailSent,
+    };
+  }
+
+  // --- team creation & member provisioning ----------------------------------
+
+  /**
+   * Resolve which manager a team/member is being created under, from the two
+   * legitimate callers (the route is @Roles('owner','manager')).
+   *
+   * A Manager is pinned to their own team: their tenant key IS their own id, so
+   * they may only ever create under it. Passing someone else's id is rejected
+   * with a clean 400 here — the RLS WITH CHECK on `user`/`team` would also block
+   * the cross-manager INSERT (manager_id must equal app_current_manager_id()),
+   * but that surfaces as a 500, and a caller trying to address another manager
+   * should get a deliberate refusal, not a database error.
+   *
+   * An Owner has no team of their own, so there is no sensible default — the
+   * target manager must be named explicitly.
+   */
+  private resolveTargetManagerId(actor: CurrentUser, requested?: string): string {
+    if (actor.role === 'manager') {
+      if (requested && requested !== actor.userId) {
+        throw new BadRequestException(
+          'A manager can only create teams and members on their own team.',
+        );
+      }
+      return actor.userId;
+    }
+    // Owner (RolesGuard has already excluded 'member').
+    if (!requested) {
+      throw new BadRequestException(
+        "managerId is required: specify which manager's team this is for.",
+      );
+    }
+    return requested;
+  }
+
+  /**
+   * Create a team for a manager (CLAUDE.md §1: a Manager creates their own team;
+   * an Owner may create teams and assign a manager).
+   *
+   * One active team per manager is enforced by the partial unique index
+   * team_manager_id_active_key — a second active team raises 23505, mapped to 409.
+   * The manager is set as a member of their own team (team_id on their user row),
+   * matching the seed fixtures and the dashboards that read team membership.
+   */
+  async createTeam(
+    actor: CurrentUser,
+    dto: CreateTeamDto,
+  ): Promise<{
+    id: string;
+    name: string;
+    managerId: string;
+    status: 'active';
+  }> {
+    const targetManagerId = this.resolveTargetManagerId(actor, dto.managerId);
+    const teamId = randomUUID();
+
+    try {
+      await this.db.tx(async (c) => {
+        // The target must be a real, active manager in the caller's own slice.
+        // RLS scopes this read: an Owner sees every manager in the org, a Manager
+        // sees only themselves — so a Manager cannot name another manager and an
+        // Owner cannot reach into another organization (the row is invisible, so
+        // this 400s rather than leaking that it exists elsewhere).
+        const mgr = await c.query(
+          `SELECT id FROM "user" WHERE id = $1 AND role = 'manager' AND status = 'active'`,
+          [targetManagerId],
+        );
+        if (mgr.rowCount === 0) {
+          throw new BadRequestException('No such manager in your organization.');
+        }
+
+        await c.query(
+          `INSERT INTO team (id, org_id, manager_id, name) VALUES ($1, $2, $3, $4)`,
+          [teamId, actor.orgId, targetManagerId, dto.name],
+        );
+
+        // The manager belongs to their own team.
+        await c.query(
+          `UPDATE "user" SET team_id = $1, updated_at = now() WHERE id = $2`,
+          [teamId, targetManagerId],
+        );
+
+        await this.writeAudit(c, {
+          orgId: actor.orgId,
+          actorUserId: actor.userId,
+          action: 'team.created',
+          targetType: 'team',
+          targetId: teamId,
+        });
+      });
+    } catch (err) {
+      if ((err as { code?: string }).code === PG_UNIQUE_VIOLATION) {
+        // team_manager_id_active_key: one active team per manager.
+        throw new ConflictException('That manager already has an active team.');
+      }
+      throw err;
+    }
+
+    return { id: teamId, name: dto.name, managerId: targetManagerId, status: 'active' };
+  }
+
+  /**
+   * Provision a Member and issue a passcode invite (CLAUDE.md §1: added by their
+   * Manager, or by the Owner on the manager's behalf, scoped to that manager's
+   * team at creation).
+   *
+   * Mirrors createManager exactly — role hardcoded to 'member', passcode hashed
+   * before it touches the database and never returned, mail sent after commit so
+   * a slow mailer never holds the transaction and a mail failure does not roll
+   * back a created account. The one addition is the team: a member must land on
+   * their manager's active team, so provisioning is refused (409) if that manager
+   * has no team yet.
+   */
+  async createMember(
+    actor: CurrentUser,
+    dto: CreateMemberDto,
+  ): Promise<{
+    id: string;
+    name: string;
+    email: string;
+    role: 'member';
+    status: 'active';
+    teamId: string;
+    passcodeExpiresAt: Date;
+    inviteEmailSent: boolean;
+  }> {
+    const targetManagerId = this.resolveTargetManagerId(actor, dto.managerId);
+
+    const userId = randomUUID();
+    const passcode = generatePasscode();
+    const passcodeHash = await hash(passcode, this.bcryptCost);
+    const expiresAt = new Date(Date.now() + this.passcodeTtlHours * 60 * 60 * 1000);
+
+    let organizationName: string;
+    let teamId: string;
+    try {
+      ({ organizationName, teamId } = await this.db.tx(async (c) => {
+        // Same RLS-scoped guard as createTeam: the manager must be real, active,
+        // and inside the caller's slice. This is the check that keeps an Owner
+        // from attaching a member to a manager in another organization — without
+        // it, the member's org_id (the Owner's) and manager_id (a foreign
+        // manager) would both satisfy the FK and the owner RLS branch, creating a
+        // cross-org member.
+        const mgr = await c.query(
+          `SELECT id FROM "user" WHERE id = $1 AND role = 'manager' AND status = 'active'`,
+          [targetManagerId],
+        );
+        if (mgr.rowCount === 0) {
+          throw new BadRequestException('No such manager in your organization.');
+        }
+
+        // A member must join their manager's active team. §1 scopes a member "to
+        // that manager's team at creation", so there must be one.
+        const team = await c.query<{ id: string }>(
+          `SELECT id FROM team WHERE manager_id = $1 AND status = 'active'`,
+          [targetManagerId],
+        );
+        if (team.rowCount === 0) {
+          throw new ConflictException(
+            'That manager has no active team yet — create a team first.',
+          );
+        }
+        const resolvedTeamId = team.rows[0].id;
+
+        await c.query(
+          `INSERT INTO "user"
+             (id, org_id, role, name, email, manager_id, team_id, role_title, workflow_step, passcode_hash, passcode_expires_at)
+           VALUES ($1, $2, 'member', $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            userId,
+            actor.orgId,
+            dto.name,
+            dto.email,
+            targetManagerId,
+            resolvedTeamId,
+            dto.roleTitle ?? null,
+            dto.workflowStep ?? null,
+            passcodeHash,
+            expiresAt,
+          ],
+        );
+
+        // As in createManager: neither the passcode nor its hash may enter the
+        // metadata — audit_log is readable by every Owner in the org.
+        await this.writeAudit(c, {
+          orgId: actor.orgId,
+          actorUserId: actor.userId,
+          action: 'member.provisioned',
+          targetType: 'user',
+          targetId: userId,
+        });
+
+        const { rows } = await c.query<{ name: string }>(
+          'SELECT name FROM organization WHERE id = $1',
+          [actor.orgId],
+        );
+        return {
+          organizationName: rows[0]?.name ?? 'your organization',
+          teamId: resolvedTeamId,
+        };
+      }));
+    } catch (err) {
+      if ((err as { code?: string }).code === PG_UNIQUE_VIOLATION) {
+        // user_org_id_email_key — the same address in a different org is legal.
+        throw new ConflictException(
+          'That email already has an account in this organization.',
+        );
+      }
+      throw err;
+    }
+
+    const inviteEmailSent = await this.sendInviteEmail({
+      to: dto.email,
+      recipientName: dto.name,
+      organizationName,
+      passcode,
+    });
+
+    return {
+      id: userId,
+      name: dto.name,
+      email: dto.email,
+      role: 'member',
+      status: 'active',
+      teamId,
       passcodeExpiresAt: expiresAt,
       inviteEmailSent,
     };
@@ -361,20 +582,25 @@ export class AuthService {
   }
 
   /**
-   * Manager first login: consume the passcode, set the permanent password, and
-   * return a token — one request, one transaction.
+   * First login for an invited account: consume the passcode, set the permanent
+   * password, and return a token — one request, one transaction.
+   *
+   * Role-neutral by design. A Manager and a Member activate through this same
+   * method; the role is read from the row the lookup returns, never from the
+   * request, and only 'manager' and 'member' are accepted (fail-closed
+   * allow-list). The invite email and its `/invite?email=...` link carry no
+   * role, so the activation path cannot depend on one — see FirstLoginDto.
    *
    * Atomic rather than two steps because CLAUDE.md §1 makes passcodes single-use.
    * If setting a password were a separate optional call, consuming the passcode
    * would leave the account with no usable credential at all — permanently
-   * locked out. See ManagerFirstLoginDto for the full reading of "may set a
-   * permanent password".
+   * locked out.
    *
    * Mirrors passwordLogin's discipline exactly: bcrypt always runs, and every
    * rejection — unknown email, wrong passcode, expired, already used, wrong
    * role, inactive, already has a password — throws one identical 401.
    */
-  async managerFirstLogin(dto: ManagerFirstLoginDto): Promise<AuthResult> {
+  async firstLogin(dto: FirstLoginDto): Promise<AuthResult> {
     const row = await this.lookupByEmail(dto.email);
 
     // Same reasoning as passwordLogin: never return before bcrypt has run, or
@@ -384,9 +610,13 @@ export class AuthService {
 
     if (!row) throw this.invalidCredentials();
 
-    // Owners have no passcode flow, and Members are task #7. Accepting either
-    // here would be a way into an account through the wrong door.
-    if (row.role !== 'manager') throw this.invalidCredentials();
+    // Owners have no passcode flow — they sign up with a password directly.
+    // Only invited roles activate here. This is a fail-closed allow-list, not a
+    // blocklist: any future role is rejected until deliberately added, so a new
+    // role can never fall through into an activation path by default.
+    if (row.role !== 'manager' && row.role !== 'member') {
+      throw this.invalidCredentials();
+    }
     if (row.status !== 'active') throw this.invalidCredentials();
     if (!row.passcode_hash) throw this.invalidCredentials();
     if (row.passcode_used_at !== null) throw this.invalidCredentials();
@@ -403,9 +633,10 @@ export class AuthService {
 
     // @Public() route, so there is no ambient scope and db.tx() would throw.
     // The context is asserted from the row the definer lookup just returned —
-    // the same explicit pattern passwordLogin uses.
+    // the same explicit pattern passwordLogin uses. role comes from the row, so
+    // a member activates under a member context and a manager under a manager one.
     const user = await this.db.withTenant(
-      { orgId: row.org_id, role: 'manager', managerId: row.manager_id },
+      { orgId: row.org_id, role: row.role, managerId: row.manager_id },
       async (c) => {
         // THE GUARD CONDITIONS ARE REPEATED IN THE WHERE CLAUSE ON PURPOSE.
         //
@@ -432,7 +663,7 @@ export class AuthService {
               AND passcode_expires_at > now()
               AND password_hash IS NULL
               AND status = 'active'
-              AND role = 'manager'
+              AND role IN ('manager', 'member')
             RETURNING name, email`,
           [row.id, newPasswordHash],
         );
@@ -442,7 +673,7 @@ export class AuthService {
         await this.writeAudit(c, {
           orgId: row.org_id,
           actorUserId: row.id,
-          action: 'manager.first_login',
+          action: `${row.role}.first_login`,
           targetType: 'user',
           targetId: row.id,
         });
@@ -459,13 +690,13 @@ export class AuthService {
       accessToken: await this.signAccessToken({
         userId: row.id,
         orgId: row.org_id,
-        role: 'manager',
+        role: row.role,
         managerId: row.manager_id,
       }),
       user: {
         id: row.id,
         orgId: row.org_id,
-        role: 'manager',
+        role: row.role,
         name: user.name,
         email: user.email,
       },
@@ -527,6 +758,43 @@ export class AuthService {
    */
   private invalidCredentials(): UnauthorizedException {
     return new UnauthorizedException('Invalid email or password.');
+  }
+
+  /**
+   * Send an invite email and report whether it went out. Shared by createManager
+   * and createMember — the invite is identical for both roles (the template and
+   * the role-less `/invite?email=...` link are shared on purpose).
+   *
+   * The passcode is passed in plaintext because the email IS the only place it
+   * exists in plaintext; it is never logged here, never returned, and the link
+   * deliberately does not carry it (renderInviteEmail explains why). A failure is
+   * non-fatal to the caller: the account already exists and the passcode is
+   * regenerable by the issuer (CLAUDE.md §1), so this returns false rather than
+   * throwing and rolling back a created account.
+   */
+  private async sendInviteEmail(params: {
+    to: string;
+    recipientName: string;
+    organizationName: string;
+    passcode: string;
+  }): Promise<boolean> {
+    try {
+      const inviteLink = `${this.appBaseUrl}/invite?email=${encodeURIComponent(params.to)}`;
+      const { subject, text } = renderInviteEmail({
+        recipientName: params.recipientName,
+        organizationName: params.organizationName,
+        passcode: params.passcode,
+        inviteLink,
+        ttlHours: this.passcodeTtlHours,
+      });
+      await this.mailer.send({ to: params.to, subject, text });
+      return true;
+    } catch (err) {
+      this.logger.error(
+        `Invite email to ${params.to} failed: ${(err as Error).message}`,
+      );
+      return false;
+    }
   }
 
   /**

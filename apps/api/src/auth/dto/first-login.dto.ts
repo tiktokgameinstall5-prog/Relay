@@ -12,19 +12,27 @@ const normaliseEmail = ({ value }: { value: unknown }) =>
 const PASSCODE_PATTERN = new RegExp(`^[${PASSCODE_ALPHABET}]+$`);
 
 /**
- * Manager first login: consume the passcode and set a permanent password, in
- * one request.
+ * First login for an invited account: consume the passcode and set a permanent
+ * password, in one request.
+ *
+ * ROLE-NEUTRAL ON PURPOSE. A Manager and a Member activate through the exact
+ * same shape and the exact same server path — the invite email and its
+ * `/invite?email=...` link carry no role, so the activation endpoint cannot
+ * depend on one. The service (AuthService.firstLogin) reads the role from the
+ * row, never from the request, and accepts only 'manager' and 'member' via a
+ * fail-closed allow-list. There is nothing here an Owner or a future role could
+ * set to activate through the wrong door.
  *
  * WHY THE PASSWORD IS REQUIRED HERE RATHER THAN OPTIONAL
  *
- * CLAUDE.md §1 says passcodes are single-use AND that a Manager "may set a
+ * CLAUDE.md §1 says passcodes are single-use AND that an invited user "may set a
  * permanent password on first login". If setting one were optional, consuming
  * the passcode would leave the account with no usable credential at all —
  * permanently locked out. Reading "may" as "may choose the password" rather
  * than "may skip it" resolves that, and avoids inventing a second token type
  * that every guard would then have to refuse everywhere else.
  */
-export class ManagerFirstLoginDto {
+export class FirstLoginDto {
   @ApiProperty({ format: 'email', maxLength: 254, example: 'morgan@acme.test' })
   @IsEmail()
   @Transform(normaliseEmail)

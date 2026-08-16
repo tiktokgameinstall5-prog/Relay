@@ -7,6 +7,8 @@ import { appEnv } from '../config/configuration';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { ManagerController } from './manager.controller';
+import { TeamController } from './team.controller';
+import { MemberController } from './member.controller';
 import { MeController } from './me.controller';
 import { MeService } from './me.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -34,7 +36,13 @@ import { MailModule } from '../mail/mail.module';
     }),
     MailModule,
   ],
-  controllers: [AuthController, ManagerController, MeController],
+  controllers: [
+    AuthController,
+    ManagerController,
+    TeamController,
+    MemberController,
+    MeController,
+  ],
   providers: [AuthService, MeService, JwtStrategy],
   // AuthService is exported because JwtStrategy needs lookupById, and later
   // modules (manager/member provisioning, task #6-7) will need the same lookups.

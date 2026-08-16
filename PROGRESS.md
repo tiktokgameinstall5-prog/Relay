@@ -4,7 +4,8 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 1 — Auth & Tenancy (in progress — Owner + Manager auth done; Member provisioning next)
+Phase 1 — Auth & Tenancy (in progress — Owner + Manager + Member provisioning and team
+creation done; the HTTP-layer isolation gate across all routes, task #9, is next)
 
 ## Phase checklist
 
@@ -19,7 +20,7 @@ Phase 1 — Auth & Tenancy (in progress — Owner + Manager auth done; Member pr
   - [x] TenantContext interceptor + ambient `db.tx()` (awaiting human review, §12)
   - [x] RolesGuard + ResourceOwnerGuard (awaiting human review, §12)
   - [x] Manager provisioning (Owner-only, passcode/invite) + first login (awaiting human review, §12)
-  - [ ] Member provisioning (Manager/Owner, scoped to team)
+  - [x] Member provisioning + team creation (Manager/Owner, scoped to team) (awaiting human review, §12)
   - [ ] HTTP-layer isolation test (the §11 gate — DB layer alone is only half)
 - [ ] Phase 2 — Workflow Engine (core)
   - [ ] task_step chain model
@@ -162,6 +163,94 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-16 — Team creation + member provisioning + role-neutral first login (task #7 complete)
+
+Three routes shipped: `POST /api/auth/teams` (Owner or Manager), `POST /api/auth/members`
+(Owner or Manager), and the canonical `POST /api/auth/first-login` for **both** managers and
+members. `manager/first-login` from task #6 stays as a thin deprecated alias so the existing
+web client keeps working; both call one `AuthService.firstLogin`.
+
+**Two forks resolved without asking, per the autonomous directive — both are the more
+CLAUDE.md-consistent reading.**
+
+*Fork A — first login is role-neutral.* Member activation is why the passcode flow had to
+generalise past managers. The route is `@Public()` (the caller has no token yet) and the invite
+link carries no role, so the role cannot come from the request — `firstLogin` reads it from the
+user row and uses a fail-closed allow-list `role IN ('manager', 'member')`; the audit action is
+`${row.role}.first_login`. An Owner never has a passcode (they self-sign-up), so they are outside
+the allow-list by construction. Narrowing that allow-list back to `role = 'manager'` is
+**SABOTAGE #A** — it reddens all six member-activation tests (confirmed, reverted).
+
+*Fork B — who may name the target manager.* `resolveTargetManagerId` centralises it: a Manager
+may omit `managerId` and may **not** name another (a requested id ≠ their own is a 400, caught
+before any DB work); an Owner **must** name one (they have no team of their own). This is the
+same shape for teams and members.
+
+**The RLS write-path asymmetry is the security core of this task, and it is not symmetric with
+reads.** On a Manager session the team/member INSERT's `WITH CHECK` forces the new row's
+`manager_id` to the manager's own id, so a manager physically cannot create cross-manager rows.
+On an **Owner** session the owner branch of the policy permits *any* `manager_id` in the org —
+so `WITH CHECK` alone does **not** stop an Owner from naming a manager in **another** org. The
+only thing that does is the service's RLS-scoped lookup
+`SELECT id FROM "user" WHERE id = $1 AND role = 'manager' AND status = 'active'`: the foreign
+manager's row is invisible under the owner's tenant context, so the lookup returns zero rows and
+the request 400s ("no such manager in your organization") instead of creating an org-1 team owned
+by an org-2 manager. That lookup is load-bearing isolation code, not a friendly validation.
+
+**SABOTAGE #C therefore targets that lookup in `createTeam`** — and running it surfaced a real
+weakness in the test that was supposed to prove it. The original cross-org test used `managerC`,
+who is seeded **with** an active team. Removing the guard did not produce the 201 breach the test
+claimed; it produced a **409**, because the second active-team INSERT trips the partial unique
+index `team_manager_id_active_key` (enforced below RLS, so it sees across orgs) before the breach
+lands. The test still failed-closed (409 ≠ the expected 400, so it caught the removal) but it was
+not exercising the breach it documented. Fixed by pairing it with a companion test whose target
+is a **teamless** manager in the other org (provisioned via `owner2`): with no active team the
+unique index never fires, so removing the guard yields the genuine **201** — an org-1 team owned
+by an org-2 manager — and the leaked-row assertion bites. Both halves were confirmed red under
+the sabotage and green with the guard restored. Lesson recorded in the spec header: an isolation
+test that only trips a *unique-index conflict* is testing the wrong backstop; force the path where
+the breach actually writes a row.
+
+**Why #C lives in `createTeam` and not `createMember`.** `createMember` has the same manager
+lookup, but there it is defence-in-depth: a second RLS-scoped guard (the active-team lookup
+`SELECT id FROM team WHERE manager_id = $1 AND status = 'active'`) also fails closed for a foreign
+manager, so removing the first guard downgrades the cross-org case to a 409/400, never a 201.
+`createTeam` has no such second guard — the manager lookup is the whole isolation boundary there.
+
+**SABOTAGE #B — the `@Roles('owner','manager')` guard on both new routes.** Removing it does
+**not** immediately breach (a member falls through to `resolveTargetManagerId` + the manager
+lookup and gets a 400, not a 201) — but it drops the correct **403** refusal, so the two
+"refuses memberA1 (403)" tests redden as 400. Worth keeping the nuance: the guard is what makes
+the product *refuse* the action cleanly rather than let it fail deep in the service; defence in
+depth means removing one layer changes the status code, not the outcome. Confirmed, reverted.
+All three sabotages reverted; `grep -rn SABOTAGE` shows only the documented test-header comments.
+
+**One active team per manager** is the partial unique index `team_manager_id_active_key ON team
+(manager_id) WHERE status = 'active'`; a second active team (for a Manager creating their own, or
+an Owner naming a manager who already has one) raises 23505 → 409. The manager is set as a member
+of their own team (`team_id` on their user row) on creation, matching the seed fixtures and the
+dashboards that read team membership.
+
+**Provisioning throttle and the not-yet-activated manager both carry over from #6 unchanged:**
+`OwnerThrottlerGuard` keys 20/hour on the authenticated user, with `@SkipThrottle({login,
+signup})` load-bearing (a `ThrottlerGuard` evaluates every registered throttler); and a
+provisioned-but-not-activated manager (`password_hash IS NULL`) still authenticates via a minted
+JWT in tests because `JwtStrategy` re-reads the row and only checks `status = 'active'` — which is
+what lets "a Manager creates their own team" run without a login round trip.
+
+Verified: `db:check` 5/5, `test:isolation` **34/34** (no regression), `test:e2e` **149/149**
+across **6 suites** (was 122/122 in 5; the new suite is `member-provisioning.e2e-spec.ts`,
+27 tests), `tsc --noEmit` and `nest build` clean.
+
+Per CLAUDE.md §12 this is authentication/authorization/isolation code and **needs human review
+before merge**. `/security-review` has not been run on this module yet — still outstanding for
+the whole auth module (tasks #4–#7).
+
+Still deferred to task #8: passcode regeneration by the issuer (§1), refresh-token rotation +
+server-side logout, making the inert signup throttle real (env-configurable, not a decorator —
+see the #6 note), and SMTP mail. Task #9 is the full HTTP-layer isolation gate across every real
+route (its spec file must match the `(isolation|rls)` pattern so `test:isolation` runs it).
 
 ### 2026-08-05 (later) — Manager provisioning, mailer, manager first login (task #6 complete)
 
