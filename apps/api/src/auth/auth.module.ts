@@ -9,6 +9,7 @@ import { AuthController } from './auth.controller';
 import { ManagerController } from './manager.controller';
 import { TeamController } from './team.controller';
 import { MemberController } from './member.controller';
+import { InviteController } from './invite.controller';
 import { MeController } from './me.controller';
 import { MeService } from './me.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -41,6 +42,7 @@ import { MailModule } from '../mail/mail.module';
     ManagerController,
     TeamController,
     MemberController,
+    InviteController,
     MeController,
   ],
   providers: [AuthService, MeService, JwtStrategy],

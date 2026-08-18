@@ -48,6 +48,17 @@ export class AuthResultDto implements AuthResult {
   })
   accessToken!: string;
 
+  @ApiProperty({
+    description:
+      'Opaque refresh token. Exchange it at POST /api/auth/refresh for a new ' +
+      'access token before this one expires; each refresh returns a new refresh ' +
+      'token and invalidates the one just used. Store it as securely as the ' +
+      'session itself — see the AuthResult docs for why it is in the body and ' +
+      'not a cookie.',
+    example: 'yZ3k9Qm2...redacted',
+  })
+  refreshToken!: string;
+
   @ApiProperty({ type: AuthUserDto })
   user!: AuthUserDto;
 }
@@ -198,5 +209,40 @@ export class TeamCreatedDto {
 
   @ApiProperty({ enum: ['active'], example: 'active' })
   status!: 'active';
+}
+
+/**
+ * What regeneratePasscode returns. Like the provisioning DTOs, the passcode
+ * itself is deliberately absent — it went to the mailer, the only place it exists
+ * in plaintext. Role-neutral: the same route re-issues an invite for a manager or
+ * a member, so `role` reports which one the target was.
+ */
+export class PasscodeRegeneratedDto {
+  @ApiProperty({ format: 'uuid', example: UUID_EXAMPLE })
+  id!: string;
+
+  @ApiProperty({ example: 'Morgan Manager' })
+  name!: string;
+
+  @ApiProperty({ format: 'email', example: 'morgan@acme.test' })
+  email!: string;
+
+  @ApiProperty({ enum: ['manager', 'member'], example: 'member' })
+  role!: 'manager' | 'member';
+
+  @ApiProperty({
+    format: 'date-time',
+    description: 'When the newly-issued passcode expires. CLAUDE.md §1 specifies ~72h.',
+    example: '2026-08-08T12:34:56.789Z',
+  })
+  passcodeExpiresAt!: Date;
+
+  @ApiProperty({
+    description:
+      'Whether the fresh invite email was sent. false means the passcode was ' +
+      'still regenerated and can be regenerated again.',
+    example: true,
+  })
+  inviteEmailSent!: boolean;
 }
 

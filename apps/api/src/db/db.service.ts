@@ -145,4 +145,44 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
       client.release();
     }
   }
+
+  /**
+   * Run `fn` in a COMMITTING transaction with NO tenant context.
+   *
+   * This is the odd one out, and it exists for exactly one caller: refresh-token
+   * rotation. That flow has to write (revoke the presented token, insert its
+   * successor) but has no tenant context to write under — a refresh request
+   * arrives with an opaque token and nothing else; the user's identity is the
+   * RESULT of the lookup, not an input to it, so withTenant() has no ctx to give
+   * and tx() would throw. And it must commit, which rules out withoutTenant().
+   *
+   * Why this is not the isolation hole it looks like: refresh_token is the one
+   * table in 0001_rls.sql that deliberately has NO row-level security. It is keyed
+   * by an unguessable token hash, not by tenant, so there is nothing for a tenant
+   * predicate to check. The safety argument is the FORCE-RLS backstop working in
+   * our favour: if a bug ever routed a write to an RLS-protected table (user, team,
+   * organization, audit_log) through this method, that write matches no policy and
+   * fails closed — zero rows affected or an outright error — rather than silently
+   * escaping isolation. So the blast radius of misuse is a broken feature, never a
+   * cross-tenant leak.
+   *
+   * Do not reach for this anywhere else. If a new caller has a tenant, it wants
+   * withTenant/tx; if it is a pre-auth read, it wants withoutTenant. The bar for a
+   * second caller here is another genuinely tenant-less table, and that should be
+   * argued in review, not assumed.
+   */
+  async unscopedTx<T>(fn: (c: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const out = await fn(client);
+      await client.query('COMMIT');
+      return out;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
 }

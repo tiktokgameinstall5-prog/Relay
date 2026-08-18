@@ -4,8 +4,10 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 1 — Auth & Tenancy (in progress — Owner + Manager + Member provisioning and team
-creation done; the HTTP-layer isolation gate across all routes, task #9, is next)
+Phase 1 — Auth & Tenancy (in progress — Owner + Manager + Member provisioning, team
+creation, and session lifecycle (refresh rotation / logout / passcode regeneration /
+signup throttle) all done; the HTTP-layer isolation gate across all routes, task #9,
+is next)
 
 ## Phase checklist
 
@@ -21,6 +23,7 @@ creation done; the HTTP-layer isolation gate across all routes, task #9, is next
   - [x] RolesGuard + ResourceOwnerGuard (awaiting human review, §12)
   - [x] Manager provisioning (Owner-only, passcode/invite) + first login (awaiting human review, §12)
   - [x] Member provisioning + team creation (Manager/Owner, scoped to team) (awaiting human review, §12)
+  - [x] Refresh-token rotation + server-side logout + passcode regeneration + real signup throttle (awaiting human review, §12)
   - [ ] HTTP-layer isolation test (the §11 gate — DB layer alone is only half)
 - [ ] Phase 2 — Workflow Engine (core)
   - [ ] task_step chain model
@@ -163,6 +166,104 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-17 — Refresh rotation, logout, passcode regeneration, real signup throttle (task #8 complete)
+
+Four capabilities shipped, all `@Public()` or issuer-scoped: `POST /api/auth/refresh`
+(opaque-token rotation), `POST /api/auth/logout` (server-side family revoke), `POST
+/api/auth/users/:id/passcode` (issuer regenerates a pending invite's passcode — role-neutral,
+on a new `InviteController`), and the signup throttle is now **real** (env-driven
+`SignupThrottlerGuard`) rather than the inert decorator noted in #6/#7.
+
+**Opaque refresh tokens, not JWTs.** 32 random bytes → base64url raw, returned once; SHA-256
+hex at rest; a `family_id` ties one rotation lineage together. There is **no
+`JWT_REFRESH_SECRET`** — an opaque token is a random lookup key, there is nothing to sign or
+verify. `refresh()` rotates on use: the presented token is revoked and a successor minted in
+the same family, both inside one tx. Reuse of an already-revoked token is treated as theft and
+**burns the whole family** (both the thief and the legitimate client are forced back to login).
+Every failure — unknown, expired, reused, deactivated-user — is one identical 401 body
+("Session expired. Please sign in again."), the same anti-oracle discipline the login path holds.
+
+**`unscopedTx`, and why it is not an isolation hole.** `refresh()` runs *before* any tenant
+context exists (the caller is still proving who they are), so it cannot use `db.tx()` — it uses
+`db.unscopedTx` (no RLS). `refresh_token` deliberately has **no RLS**: a row is found only by
+`sha256(presented token)`, so possession of the secret *is* the authorization; there is no id
+to guess and nothing cross-tenant to reach. Identity for the new session is still re-derived
+from the `user` row (role/orgId/managerId from the row, never from the token), exactly as
+`JwtStrategy.validate()` does. The migrator may insert `refresh_token` rows (seeding the expired-token
+tests) precisely because the table is outside RLS.
+
+**Refresh token in the response body, not an HttpOnly cookie.** One contract serves web and
+Flutter (§6); a cookie is invisible to a native mobile client. The web client holds the refresh
+token in memory — its XSS exposure is the same as the access token it already holds — so this
+is a deliberate, documented trade, not an oversight.
+
+**Signup throttle is now real and env-driven.** `SignupThrottlerGuard` keys the named `signup`
+throttler on IP (signup is unauthenticated and creates a *new* org, so there is no account to
+key on); `SIGNUP_THROTTLE_LIMIT` / `_TTL` configure it (default 10/hr). Every *other* e2e spec
+lifts the limit to 1,000,000 via `test/helpers/test-env.ts` so it never bites mid-suite;
+`signup-throttle.e2e-spec.ts` boots its **own** `AppModule` with the limit at 3 to prove the
+bite, and also proves a bad-creds login still 401s (not 429) from an exhausted signup bucket —
+pinning the `@SkipThrottle` wiring (a `ThrottlerGuard` evaluates every registered throttler).
+
+**Access-token-equality test fix (carried from a prior session, re-confirmed).** A JWT's
+`iat`/`exp` are integer seconds, so two access tokens minted in the same wall-clock second are
+byte-identical. The rotation test therefore must **not** assert the access token differs across
+a refresh — it asserts a 3-segment JWT plus a `GET /api/me` round-trip. The security-critical
+rotation is on the *opaque* refresh token, which is asserted to differ.
+
+**Three sabotage findings — the tests assert the right behaviour, but three `[sabotage #X]`
+annotations overstated what removing a single element proves.** All confirmed by
+mutate→run→revert; **none is a security defect** (every property is enforced, in each case by at
+least one layer, usually two). The overstatement was in the *documentation*; corrected in-place
+in the spec headers with the true mechanism and a `Verified 2026-08-17` stamp.
+
+1. **session-refresh #C (`FOR UPDATE`).** The two-request concurrency test does **not** go red
+   when `FOR UPDATE` is removed: in single-process `runInBand` the two `Promise.all` refreshes
+   serialise by timing (the first tx commits before the second's `SELECT`, so the second reads
+   `revoked_at` already set and takes the reuse path via the committed row, not the lock) —
+   `[200,401]` either way. Forcing genuine concurrency instead (an 8-way burst) **deadlocks**
+   with the lock removed (row-lock on `WHERE id` vs the reuse branch's `WHERE family_id`), which
+   confirms `FOR UPDATE` **is** load-bearing under real multi-connection load — but also that a
+   burst is not a usable deterministic test. Kept `FOR UPDATE`; the test now honestly pins only
+   the end-state invariant (exactly one success, family burned).
+
+2. **passcode #A (`password_hash IS NULL`).** Removing *just* this predicate stays green: an
+   activated account has **both** `password_hash` and `passcode_used_at` set (first-login stamps
+   them in one atomic UPDATE), so `passcode_used_at IS NULL` independently blocks re-issue.
+   Removing **both** is the effective sabotage (200 + an invite mail on a live account, then
+   first-login could reset the password). They are kept as belt-and-braces; first-login *itself*
+   also re-checks `password_hash IS NULL`, a second independent takeover barrier.
+
+3. **passcode #C (`@OwnedResource`).** Removing it reddens **no** cross-tenant test:
+   `regeneratePasscode` runs under `db.tx()`, so RLS filters a cross-org/cross-team target to
+   zero rows → 404 regardless of the guard. What it *does* redden is "a malformed id is a 404"
+   (→ 500 — Postgres invalid-uuid on the non-UUID reaching the UPDATE). So on this route the
+   guard's observable job is the pre-DB UUID/existence 404 (plus defence-in-depth), **not** the
+   tenant boundary — RLS owns that. Re-tagged the malformed-id test as the real `#C` guard.
+
+**Accurate sabotage checks (reddened exactly as documented, reverted):** session-refresh #A
+(normal-path revoke — replay returns 200), #B (drop the family-revoke UPDATE — the live
+successor survives a reuse), #D (give any one failure branch a distinct body — anti-oracle
+breaks); passcode #B (`@Roles` → a Member 403s *before* `ResourceOwnerGuard` runs, so it is 403
+not 404); signup #A (remove `@UseGuards(SignupThrottlerGuard)` → the limit+1th signup is 201 not
+429, since there is no global `ThrottlerGuard`). `grep -rn SABOTAGE apps/api/src` clean; only the
+documented test-header comments remain.
+
+**Deferred to Phase 6 (not this task):** self-service "forgot passcode" re-issue for an
+*unauthenticated* invitee (§1). The issuer-driven regenerate above covers the operational need
+now; the self-service variant is a Phase-6 polish item, recorded so it is not lost.
+
+Verified: `test:isolation` **34/34** (no regression), `test:e2e` **179/179** across **9 suites**
+(was 149/149 in 6; +3 suites: `session-refresh` 14, `passcode-regeneration` 15, `signup-throttle`
+1), `tsc --noEmit` and `nest build` clean.
+
+Per CLAUDE.md §12 this is authentication/authorization/isolation code and **needs human review
+before merge**. `/security-review` still has not been run on the auth module — outstanding for
+the whole module (tasks #4–#8). **Flagged for review:** the three sabotage-annotation
+corrections above — a reviewer should confirm the redundancy layers (RLS + guard; the two
+passcode predicates; first-login's own `password_hash IS NULL`) are all intended defence-in-depth,
+and decide whether `FOR UPDATE` warrants a dedicated deterministic concurrency harness later.
 
 ### 2026-08-16 — Team creation + member provisioning + role-neutral first login (task #7 complete)
 

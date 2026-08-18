@@ -12,13 +12,14 @@
  *      0002_auth_lookup.sql, which exist because login must find a user before a
  *      context can be derived from that very user.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   Logger,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -42,6 +43,27 @@ import { renderInviteEmail } from '../mail/templates/invite';
 /** Postgres unique-violation. Thrown by the (org_id, email) index. */
 const PG_UNIQUE_VIOLATION = '23505';
 
+/**
+ * Entropy in an opaque refresh token, before base64url encoding. 32 bytes = 256
+ * bits — past any brute-force concern. The token is never read by a human, so
+ * length is a non-issue.
+ */
+const REFRESH_TOKEN_BYTES = 32;
+
+/**
+ * SHA-256 hex of a string.
+ *
+ * Refresh tokens are stored ONLY as this digest; the raw token is returned to the
+ * client once and then exists nowhere on the server, so a database read cannot
+ * recover a usable token. A plain, unsalted digest is the correct tool here,
+ * unlike for passwords: the input is 256 bits of uniform randomness, so there is
+ * no dictionary to precompute and nothing a bcrypt work factor would buy — and a
+ * fast digest keeps the refresh path a single indexed lookup on token_hash.
+ */
+function sha256Hex(input: string): string {
+  return createHash('sha256').update(input).digest('hex');
+}
+
 export interface AuthLookupRow {
   id: string;
   org_id: string;
@@ -56,6 +78,15 @@ export interface AuthLookupRow {
 
 export interface AuthResult {
   accessToken: string;
+  /**
+   * Opaque refresh token (see AuthService rotation). Delivered in the response
+   * body, not a cookie, because CLAUDE.md §6 mandates one API shared by the web
+   * app and the Flutter client, and a Set-Cookie only serves the browser. The
+   * cost is that the web client must hold it in memory rather than an
+   * HttpOnly cookie — an accepted trade recorded in PROGRESS.md; a stolen token
+   * still buys only rotation, which reuse-detection then catches.
+   */
+  refreshToken: string;
   user: {
     id: string;
     orgId: string;
@@ -71,6 +102,7 @@ export class AuthService {
   private readonly bcryptCost: number;
   private readonly accessTtl: string;
   private readonly passcodeTtlHours: number;
+  private readonly refreshTtlDays: number;
   private readonly appBaseUrl: string;
 
   /**
@@ -94,6 +126,7 @@ export class AuthService {
     this.bcryptCost = env.BCRYPT_COST;
     this.accessTtl = env.JWT_ACCESS_TTL;
     this.passcodeTtlHours = env.PASSCODE_TTL_HOURS;
+    this.refreshTtlDays = env.REFRESH_TOKEN_TTL_DAYS;
     this.appBaseUrl = env.APP_BASE_URL;
     this.dummyHashPromise = hash(randomUUID(), this.bcryptCost);
   }
@@ -121,8 +154,9 @@ export class AuthService {
     // silently succeeding.
     const ctx: TenantContext = { orgId, role: 'owner', managerId: null };
 
+    let refreshToken: string;
     try {
-      await this.db.withTenant(ctx, async (c) => {
+      refreshToken = await this.db.withTenant(ctx, async (c) => {
         await c.query('INSERT INTO organization (id, name) VALUES ($1, $2)', [
           orgId,
           dto.organizationName,
@@ -141,6 +175,12 @@ export class AuthService {
           targetType: 'organization',
           targetId: orgId,
         });
+
+        // Issued inside the same transaction as the account it belongs to: a
+        // rolled-back signup leaves no orphaned token, and a committed one hands
+        // back a usable session atomically. A fresh randomUUID() starts a new
+        // rotation family.
+        return this.insertRefreshToken(c, userId, randomUUID());
       });
     } catch (err) {
       if ((err as { code?: string }).code === PG_UNIQUE_VIOLATION) {
@@ -160,6 +200,7 @@ export class AuthService {
         role: 'owner',
         managerId: null,
       }),
+      refreshToken,
       user: { id: userId, orgId, role: 'owner', name: dto.name, email: dto.email },
     };
   }
@@ -500,6 +541,108 @@ export class AuthService {
     };
   }
 
+  // --- passcode regeneration -------------------------------------------------
+
+  /**
+   * Re-issue the invite passcode for a not-yet-activated account and re-send the
+   * email (CLAUDE.md §1: passcodes are "regenerable by the issuer").
+   *
+   * Owner or Manager. Isolation is enforced in two layers, both server-side:
+   * @OwnedResource on the route 404s a target outside the caller's tenant slice
+   * before this runs, and the UPDATE below is RLS-scoped so a Manager can only
+   * ever touch their own members (a Manager's slice is themselves + their team),
+   * never another manager or another team's member.
+   *
+   * The WHERE predicates — not the guard — are what confine this to a live
+   * invite:
+   *   password_hash IS NULL    — the account has not been activated
+   *   passcode_used_at IS NULL — the invite was never consumed
+   *   role IN (manager,member) — owners have no passcode flow
+   * Without them this would be an account-takeover primitive: regenerating a
+   * passcode for an ACTIVE user, then running firstLogin, would reset their
+   * password. A target that is active, an owner, inactive, or nonexistent all
+   * collapse to the same 404 as "not in your tenant", so the caller cannot probe
+   * another account's activation state.
+   */
+  async regeneratePasscode(
+    actor: CurrentUser,
+    targetUserId: string,
+  ): Promise<{
+    id: string;
+    name: string;
+    email: string;
+    role: 'manager' | 'member';
+    passcodeExpiresAt: Date;
+    inviteEmailSent: boolean;
+  }> {
+    const passcode = generatePasscode();
+    const passcodeHash = await hash(passcode, this.bcryptCost);
+    const expiresAt = new Date(Date.now() + this.passcodeTtlHours * 60 * 60 * 1000);
+
+    const updated = await this.db.tx(async (c) => {
+      const res = await c.query<{
+        name: string;
+        email: string;
+        role: 'manager' | 'member';
+      }>(
+        `UPDATE "user"
+            SET passcode_hash = $2,
+                passcode_expires_at = $3,
+                updated_at = now()
+          WHERE id = $1
+            AND role IN ('manager', 'member')
+            AND status = 'active'
+            AND password_hash IS NULL
+            AND passcode_used_at IS NULL
+          RETURNING name, email, role`,
+        [targetUserId, passcodeHash, expiresAt],
+      );
+      if (res.rowCount === 0) return null;
+
+      const org = await c.query<{ name: string }>(
+        'SELECT name FROM organization WHERE id = $1',
+        [actor.orgId],
+      );
+
+      await this.writeAudit(c, {
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        action: 'passcode.regenerated',
+        targetType: 'user',
+        targetId: targetUserId,
+      });
+
+      return {
+        name: res.rows[0].name,
+        email: res.rows[0].email,
+        role: res.rows[0].role,
+        organizationName: org.rows[0]?.name ?? 'your organization',
+      };
+    });
+
+    if (!updated) throw new NotFoundException();
+
+    // After commit, same as provisioning: a slow or failing mailer never holds
+    // the transaction, and a delivery failure returns 200 with
+    // inviteEmailSent: false rather than undoing a regeneration the issuer asked
+    // for. The old passcode is already overwritten either way.
+    const inviteEmailSent = await this.sendInviteEmail({
+      to: updated.email,
+      recipientName: updated.name,
+      organizationName: updated.organizationName,
+      passcode,
+    });
+
+    return {
+      id: targetUserId,
+      name: updated.name,
+      email: updated.email,
+      role: updated.role,
+      passcodeExpiresAt: expiresAt,
+      inviteEmailSent,
+    };
+  }
+
   // --- login ---------------------------------------------------------------
 
   /**
@@ -543,21 +686,25 @@ export class AuthService {
 
     if (!passwordMatches) throw this.invalidCredentials();
 
-    const user = await this.db.withTenant(
+    const session = await this.db.withTenant(
       { orgId: row.org_id, role: row.role, managerId: row.manager_id },
       async (c) => {
         const { rows } = await c.query<{ name: string; email: string }>(
           'SELECT name, email FROM "user" WHERE id = $1',
           [row.id],
         );
-        return rows[0];
+        if (!rows[0]) return null;
+        // A fresh login starts a new session lineage, unrelated to any refresh
+        // chain the same user may already hold on another device.
+        const refreshToken = await this.insertRefreshToken(c, row.id, randomUUID());
+        return { ...rows[0], refreshToken };
       },
     );
 
     // Should be unreachable: the definer lookup just found this row. If it
     // happens, the tenant context built from that row does not select it back —
     // an isolation bug, not a credentials problem. Fail closed and make noise.
-    if (!user) {
+    if (!session) {
       this.logger.error(
         `User ${row.id} found by definer lookup but not visible under its own tenant context.`,
       );
@@ -571,12 +718,13 @@ export class AuthService {
         role: row.role,
         managerId: row.manager_id,
       }),
+      refreshToken: session.refreshToken,
       user: {
         id: row.id,
         orgId: row.org_id,
         role: row.role,
-        name: user.name,
-        email: user.email,
+        name: session.name,
+        email: session.email,
       },
     };
   }
@@ -635,7 +783,7 @@ export class AuthService {
     // The context is asserted from the row the definer lookup just returned —
     // the same explicit pattern passwordLogin uses. role comes from the row, so
     // a member activates under a member context and a manager under a manager one.
-    const user = await this.db.withTenant(
+    const session = await this.db.withTenant(
       { orgId: row.org_id, role: row.role, managerId: row.manager_id },
       async (c) => {
         // THE GUARD CONDITIONS ARE REPEATED IN THE WHERE CLAUSE ON PURPOSE.
@@ -678,13 +826,17 @@ export class AuthService {
           targetId: row.id,
         });
 
-        return res.rows[0];
+        // Same transaction as the activation: the account cannot end up
+        // activated-but-sessionless, nor with a token that a rolled-back
+        // activation never earned. New family — this is a fresh session.
+        const refreshToken = await this.insertRefreshToken(c, row.id, randomUUID());
+        return { ...res.rows[0], refreshToken };
       },
     );
 
     // Lost the race, or the row moved under us between lookup and update.
     // Indistinguishable from every other failure, by design.
-    if (!user) throw this.invalidCredentials();
+    if (!session) throw this.invalidCredentials();
 
     return {
       accessToken: await this.signAccessToken({
@@ -693,6 +845,129 @@ export class AuthService {
         role: row.role,
         managerId: row.manager_id,
       }),
+      refreshToken: session.refreshToken,
+      user: {
+        id: row.id,
+        orgId: row.org_id,
+        role: row.role,
+        name: session.name,
+        email: session.email,
+      },
+    };
+  }
+
+  // --- refresh & logout -----------------------------------------------------
+
+  /**
+   * Rotate a refresh token: revoke the presented one and mint its successor in
+   * the same family, returning a fresh access token alongside.
+   *
+   * Rotation-on-use with family-wide revocation on reuse is what makes an opaque
+   * bearer token safe to hand out for 30 days. Each token is single-use; the
+   * moment one is presented it is revoked and replaced. So a token seen twice is
+   * an anomaly with only two explanations — the legitimate client retried, or a
+   * stolen copy is being used in parallel — and since neither the server nor the
+   * user can tell which, the safe response to both is to burn the whole family
+   * and force a fresh login. A thief who races ahead of the victim thus locks
+   * *themselves* out on the victim's next refresh, and vice versa.
+   *
+   * Every failure — unknown token, already-revoked (reuse), expired, or a
+   * since-deactivated user — returns one identical 401 via invalidRefreshToken(),
+   * the same anti-oracle discipline as passwordLogin.
+   */
+  async refresh(presentedToken: string): Promise<AuthResult> {
+    const tokenHash = sha256Hex(presentedToken);
+
+    // The write half runs context-free and committing (unscopedTx): a refresh
+    // request carries only the opaque token, so there is no tenant to scope by,
+    // and refresh_token deliberately has no RLS (see DbService.unscopedTx). The
+    // user's identity is the RESULT of this lookup, not an input to it.
+    const rotated = await this.db.unscopedTx(async (c) => {
+      // FOR UPDATE serialises two concurrent refreshes of the same token: the
+      // second blocks until the first commits, then reads revoked_at set and
+      // takes the reuse path. Without the lock both could rotate.
+      const { rows } = await c.query<{
+        id: string;
+        user_id: string;
+        family_id: string;
+        expires_at: Date;
+        revoked_at: Date | null;
+      }>(
+        `SELECT id, user_id, family_id, expires_at, revoked_at
+           FROM refresh_token
+          WHERE token_hash = $1
+          FOR UPDATE`,
+        [tokenHash],
+      );
+      const token = rows[0];
+
+      // Unknown token — nothing to rotate, nothing to revoke.
+      if (!token) return null;
+
+      // Reuse of an already-revoked token. Treat as compromise: revoke every
+      // still-live token in the family so both the thief and the legitimate
+      // client are forced back through login.
+      if (token.revoked_at !== null) {
+        await c.query(
+          `UPDATE refresh_token SET revoked_at = now()
+            WHERE family_id = $1 AND revoked_at IS NULL`,
+          [token.family_id],
+        );
+        return null;
+      }
+
+      // Expired. Left in place (not revoked) — it is already useless, and a
+      // sweep can reap expired rows later without racing this path.
+      if (token.expires_at.getTime() <= Date.now()) return null;
+
+      // The normal path: revoke this token, mint its successor in the same
+      // family. Both writes commit together, so a token is never left revoked
+      // with no successor, nor a successor minted without revoking its parent.
+      await c.query(`UPDATE refresh_token SET revoked_at = now() WHERE id = $1`, [
+        token.id,
+      ]);
+      const refreshToken = await this.insertRefreshToken(
+        c,
+        token.user_id,
+        token.family_id,
+      );
+      return { userId: token.user_id, refreshToken };
+    });
+
+    if (!rotated) throw this.invalidRefreshToken();
+
+    // Re-derive the session from the user row, exactly as JwtStrategy does on
+    // every request: role/orgId/managerId come from the row, never from the
+    // token, and a since-deactivated user is refused here too. The successor
+    // token committed above is then inert for them — acceptable, since they can
+    // mint no access token, and their next attempt with the now-revoked parent
+    // trips reuse-detection and reaps the family.
+    const row = await this.lookupById(rotated.userId);
+    if (!row || row.status !== 'active') throw this.invalidRefreshToken();
+
+    // auth_lookup_by_id deliberately does not return name/email (0002), so read
+    // them under the row's own tenant context — the same second read passwordLogin
+    // makes.
+    const user = await this.db.withTenant(
+      { orgId: row.org_id, role: row.role, managerId: row.manager_id },
+      async (c) => {
+        const { rows } = await c.query<{ name: string; email: string }>(
+          'SELECT name, email FROM "user" WHERE id = $1',
+          [rotated.userId],
+        );
+        return rows[0] ?? null;
+      },
+    );
+    if (!user) throw this.invalidRefreshToken();
+
+    return {
+      accessToken: await this.signAccessToken({
+        userId: row.id,
+        orgId: row.org_id,
+        role: row.role,
+        managerId: row.manager_id,
+      }),
+      refreshToken: rotated.refreshToken,
       user: {
         id: row.id,
         orgId: row.org_id,
@@ -701,6 +976,34 @@ export class AuthService {
         email: user.email,
       },
     };
+  }
+
+  /**
+   * End a session. CLAUDE.md §1/§5: logout only ends the session — no data is
+   * touched, and re-entry is the ordinary login flow.
+   *
+   * Revokes the whole family of the presented token, not just the token itself,
+   * so "log me out" kills the session lineage rather than one link that a
+   * previous rotation may already have replaced. Idempotent and silent: an
+   * unknown, already-revoked, or malformed token is a no-op returning success,
+   * because a logged-out client discarding a token it can no longer use is not an
+   * error and there is nothing to report to it.
+   *
+   * Possession of the token authorises its revocation — no access token is
+   * required. That is deliberate: an access token may have already expired when
+   * the user clicks "sign out", and revoking a session is strictly less harmful
+   * than the rotation that same token could otherwise perform.
+   */
+  async logout(presentedToken: string): Promise<void> {
+    const tokenHash = sha256Hex(presentedToken);
+    await this.db.unscopedTx(async (c) => {
+      await c.query(
+        `UPDATE refresh_token SET revoked_at = now()
+          WHERE family_id = (SELECT family_id FROM refresh_token WHERE token_hash = $1)
+            AND revoked_at IS NULL`,
+        [tokenHash],
+      );
+    });
   }
 
   // --- lookups (the only context-free reads in the codebase) ----------------
@@ -753,11 +1056,49 @@ export class AuthService {
   }
 
   /**
+   * Insert one opaque refresh token and return its RAW value — the only moment
+   * that value exists un-hashed on the server. Runs on whatever transaction the
+   * caller supplies (the login/signup/first-login write, or the rotation inside
+   * unscopedTx), so issuance is always atomic with the state change that earns it.
+   *
+   * `familyId` ties the token to a rotation lineage: a fresh randomUUID() at
+   * login/signup/first-login begins a new family; rotation passes the presented
+   * token's family so the whole chain can be revoked together on reuse.
+   */
+  private async insertRefreshToken(
+    c: PoolClient,
+    userId: string,
+    familyId: string,
+  ): Promise<string> {
+    const raw = randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
+    const expiresAt = new Date(
+      Date.now() + this.refreshTtlDays * 24 * 60 * 60 * 1000,
+    );
+    await c.query(
+      `INSERT INTO refresh_token (user_id, token_hash, family_id, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [userId, sha256Hex(raw), familyId, expiresAt],
+    );
+    return raw;
+  }
+
+  /**
    * One object for every failure. Constructed fresh each time so the message
    * cannot be mutated by a caller, but always identical in content.
    */
   private invalidCredentials(): UnauthorizedException {
     return new UnauthorizedException('Invalid email or password.');
+  }
+
+  /**
+   * The refresh-path analogue of invalidCredentials(): one identical 401 for
+   * every reason a refresh can fail — unknown token, reuse of a revoked one,
+   * expiry, or a since-deactivated user. Distinguishing them would tell a holder
+   * of a random or stale token something about it; they learn only "sign in
+   * again".
+   */
+  private invalidRefreshToken(): UnauthorizedException {
+    return new UnauthorizedException('Session expired. Please sign in again.');
   }
 
   /**

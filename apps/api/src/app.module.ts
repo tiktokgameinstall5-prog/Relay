@@ -38,8 +38,16 @@ import { TenantContextInterceptor } from './auth/interceptors/tenant-context.int
               limit: env.LOGIN_THROTTLE_LIMIT,
               ttl: env.LOGIN_THROTTLE_TTL_SECONDS * 1000,
             },
-            // Named config for the signup route's @Throttle({ signup: ... }).
-            { name: 'signup', limit: 10, ttl: 3_600_000 },
+            // The named 'signup' throttler used by SignupThrottlerGuard:
+            // SIGNUP_THROTTLE_LIMIT signups per SIGNUP_THROTTLE_TTL_SECONDS per
+            // IP, 10 / hour by default. Env-driven so the e2e suite can lift it
+            // (test/helpers/test-env.ts) without a real production limit having
+            // to be unrealistically high.
+            {
+              name: 'signup',
+              limit: env.SIGNUP_THROTTLE_LIMIT,
+              ttl: env.SIGNUP_THROTTLE_TTL_SECONDS * 1000,
+            },
             // Manager provisioning: 20/hour keyed on the authenticated Owner
             // rather than IP. Provisioning is a deliberate human act; 20/hour
             // is far above real use and well below what makes a compromised

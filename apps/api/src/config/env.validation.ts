@@ -33,9 +33,35 @@ export interface AppEnv {
   DATABASE_URL: string;
   JWT_ACCESS_SECRET: string;
   JWT_ACCESS_TTL: string;
+  /**
+   * How long a refresh token stays valid, in days. CLAUDE.md §1 says "~30-day
+   * refresh token".
+   *
+   * There is deliberately no JWT_REFRESH_SECRET: refresh tokens are OPAQUE random
+   * strings, not JWTs (see the refresh_token table and AuthService), so there is
+   * nothing to sign. A signing secret would be dead configuration that implies a
+   * design this code does not use. .env.example documents the switch.
+   *
+   * Capped at a year: a refresh token is a long-lived credential, and "remember
+   * me forever" is a footgun, not a feature.
+   */
+  REFRESH_TOKEN_TTL_DAYS: number;
   BCRYPT_COST: number;
   LOGIN_THROTTLE_LIMIT: number;
   LOGIN_THROTTLE_TTL_SECONDS: number;
+  /**
+   * Signup rate limit: SIGNUP_THROTTLE_LIMIT orgs per SIGNUP_THROTTLE_TTL_SECONDS
+   * per source IP. Keyed on IP alone (via SignupThrottlerGuard) because signup is
+   * unauthenticated and there is no account yet to key on — see the guard.
+   *
+   * Env-configurable for the same reason LOGIN_THROTTLE_LIMIT is: the e2e suite
+   * creates far more than a real hour's worth of orgs from one IP, so its jest
+   * setup raises this out of the way (test/helpers/test-env.ts). A hardcoded
+   * limit would force a choice between an unrealistically high production default
+   * and a red test suite.
+   */
+  SIGNUP_THROTTLE_LIMIT: number;
+  SIGNUP_THROTTLE_TTL_SECONDS: number;
   /**
    * Whether to mount the interactive Swagger UI at /api/docs.
    *
@@ -229,6 +255,16 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     DATABASE_URL: databaseUrl ?? '',
     JWT_ACCESS_SECRET: accessSecret,
     JWT_ACCESS_TTL: accessTtl.trim(),
+    // ~30 days, per CLAUDE.md §1. Capped at a year — a refresh token is a
+    // long-lived credential and "remember me forever" is a footgun.
+    REFRESH_TOKEN_TTL_DAYS: intInRange(
+      'REFRESH_TOKEN_TTL_DAYS',
+      source.REFRESH_TOKEN_TTL_DAYS,
+      30,
+      1,
+      365,
+      problems,
+    ),
     BCRYPT_COST: bcryptCost,
     // 5 attempts / 15 min, per the login-throttling decision.
     LOGIN_THROTTLE_LIMIT: intInRange(
@@ -243,6 +279,29 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
       'LOGIN_THROTTLE_TTL_SECONDS',
       source.LOGIN_THROTTLE_TTL_SECONDS,
       900,
+      1,
+      86_400,
+      problems,
+    ),
+    // 10 signups / hour / IP by default. The upper bound is deliberately huge
+    // (10 million) rather than a tidy number: the e2e suite's jest setup sets
+    // this to 1_000_000 to lift the limit clear of a run that creates dozens of
+    // orgs from one IP, and intInRange would reject that as out of range with a
+    // tighter cap. No production deployment wants a real limit that high, but
+    // the validator's job is to reject nonsense, not to second-guess a value the
+    // operator explicitly set.
+    SIGNUP_THROTTLE_LIMIT: intInRange(
+      'SIGNUP_THROTTLE_LIMIT',
+      source.SIGNUP_THROTTLE_LIMIT,
+      10,
+      1,
+      10_000_000,
+      problems,
+    ),
+    SIGNUP_THROTTLE_TTL_SECONDS: intInRange(
+      'SIGNUP_THROTTLE_TTL_SECONDS',
+      source.SIGNUP_THROTTLE_TTL_SECONDS,
+      3600,
       1,
       86_400,
       problems,
