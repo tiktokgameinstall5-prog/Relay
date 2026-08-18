@@ -4,10 +4,11 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 1 — Auth & Tenancy (in progress — Owner + Manager + Member provisioning, team
-creation, and session lifecycle (refresh rotation / logout / passcode regeneration /
-signup throttle) all done; the HTTP-layer isolation gate across all routes, task #9,
-is next)
+Phase 1 — Auth & Tenancy (code-complete — Owner + Manager + Member provisioning, team
+creation, session lifecycle (refresh rotation / logout / passcode regeneration / signup
+throttle), and the two-layer §11 isolation gate (DB + HTTP, 59 tests) all done and green.
+Remaining before Phase 1 is fully closed: human review of the auth module (§12) and a
+`/security-review` pass — both outstanding for tasks #4–#9. Phase 2 (Workflow Engine) is next.)
 
 ## Phase checklist
 
@@ -24,7 +25,7 @@ is next)
   - [x] Manager provisioning (Owner-only, passcode/invite) + first login (awaiting human review, §12)
   - [x] Member provisioning + team creation (Manager/Owner, scoped to team) (awaiting human review, §12)
   - [x] Refresh-token rotation + server-side logout + passcode regeneration + real signup throttle (awaiting human review, §12)
-  - [ ] HTTP-layer isolation test (the §11 gate — DB layer alone is only half)
+  - [x] HTTP-layer isolation test (the §11 gate — DB layer alone is only half) — 25 tests, `http-isolation.e2e-spec.ts`
 - [ ] Phase 2 — Workflow Engine (core)
   - [ ] task_step chain model
   - [ ] forward / complete actions
@@ -166,6 +167,70 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-18 — HTTP-layer isolation gate across all Phase 1 routes (task #9 complete)
+
+`http-isolation.e2e-spec.ts` (**25 tests**) is the HTTP companion to `rls.e2e-spec.ts` (34,
+DB layer). Together they are the two halves of the §11 gate: RLS proves the *database* returns
+zero rows for a cross-tenant id even with every guard removed; this suite proves the *HTTP
+stack* — `JwtAuthGuard → RolesGuard → ResourceOwnerGuard` + RLS — refuses cross-tenant and
+cross-role requests over real routes with real (sometimes forged) bearer tokens. The filename
+matches the `(isolation|rls)` pattern so `test:isolation` runs it as part of the permanent gate.
+
+**Phase 1 exposes no read-by-id route.** The only GET that returns a user is `/api/me`, and it
+is self-only (it reads `request.user`, ignores any id). There is no "fetch manager B by id"
+endpoint to attack directly — the id-guessing surface is the *write/provisioning* routes
+(`POST /auth/teams`, `/auth/members`, `/auth/managers`) and the issuer-scoped passcode regenerate
+(`POST /auth/users/:id/passcode`). The gate drives each cross-tenant and cross-role and pins the
+exact refusal. (Phase 2's read-by-id task/step routes will extend this same spec — noted in its
+header.)
+
+**The status matrix is the contract (each code pinned, each meaning distinct):**
+- **403** — RolesGuard, *before* target resolution: the action is refused for the caller's role
+  (a Member/Manager hitting an Owner-only route). It never reveals whether a target exists.
+- **400** — the named target manager is unresolvable *within the caller's RLS slice*
+  (`resolveTargetManagerId` + an RLS-scoped manager lookup): a Manager naming another manager, or
+  an Owner naming a manager in another org. Byte-identical to "no such manager", never a leak.
+- **404** — ResourceOwnerGuard/RLS: an id-addressed row outside the caller's slice is
+  indistinguishable from one that never existed (a malformed UUID also 404s, pre-DB).
+
+**The property the gate exploits: the JWT is never trusted for scoping.** Two tests forge a
+validly-signed token whose `orgId`/`managerId`/`role` claims lie. Because
+`JwtStrategy.validate()` re-reads the user row every request and builds `CurrentUser` from the
+*row* (never the payload), a forged `orgId` does not move `/me`'s scope and a forged `role=owner`
+still 403s at an Owner-only route. These two are the load-bearing gate tests.
+
+**Three sabotage checks (mutate→run→revert), same discipline as tasks #5/#6 — all reverted, none
+a defect:**
+1. **A — `jwt.strategy.ts` trusts claims.** Rebuilt `CurrentUser` from the token payload instead
+   of the row. Exactly the two forged-token tests reddened (`/me` returned the forged org;
+   `role=owner` forgery turned a 403 into a 400). Confirms those two pin the claims-not-trusted
+   property and nothing else silently depends on it.
+2. **B — `roles.guard.ts` refusal disabled.** Commented out the `throw new ForbiddenException()`.
+   All six "refused (403)" tests reddened (403 → 200/400/409). The passcode case (Member 403 →
+   200) specifically proves RolesGuard runs *before* ResourceOwnerGuard — with the role check
+   gone, a Member reached the owned-resource path.
+3. **C — `auth.service.ts` `createTeam` manager-lookup 400 disabled.** Only the owner-cross-org
+   *team* test reddened (400 → 409: `team_manager_id_active_key` fires because managerC already
+   has an active team). The owner-cross-org *member* test stayed green — `createMember`'s path is
+   double-defended (its own manager lookup + the active-team lookup), so a single mutation cannot
+   redden it. Confirms the team route's cross-org 400 rests on a single layer and that the test
+   genuinely pins it (not incidentally passing).
+
+`grep -rn SABOTAGE apps/api/src` clean; `git diff -- apps/api/src` empty — the only new artifact
+is the spec file.
+
+Verified: `test:isolation` **59/59** across **2 suites** (34 rls + 25 http-isolation), `test:e2e`
+**204/204** across **10 suites** (+1 suite, +25 vs #8's 179/9), `tsc --noEmit` and `nest build`
+clean. (The one `ExceptionsHandler` line in the e2e log is the `ProbeController.publicTx` negative
+test deliberately calling `db.tx()` on a `@Public()` route to prove `requireTenantScope` throws —
+a passing negative assertion, not a failure.)
+
+Per CLAUDE.md §12 this is authentication/authorization/isolation code and **needs human review
+before merge**; `/security-review` still has not been run — outstanding for the whole auth module
+(tasks #4–#9). **This entry closes Phase 1 build-order item 1 and the §11 gate requirement** — the
+isolation test (Manager A cannot reach Manager B by id → empty result / 403 / 404) now exists at
+both the DB and HTTP layers and must never be removed from CI.
 
 ### 2026-08-17 — Refresh rotation, logout, passcode regeneration, real signup throttle (task #8 complete)
 
