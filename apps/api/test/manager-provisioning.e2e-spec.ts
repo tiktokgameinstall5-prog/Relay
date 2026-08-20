@@ -214,6 +214,32 @@ describe('provisioned row and audit', () => {
     expect(url).not.toContain(passcode);
   });
 
+  // Regression: on 2026-08-06 APP_BASE_URL was set to the API's own origin, so every
+  // invite link pointed at a port that serves no /invite route — a dead link in every
+  // invite ever sent. The assertions above all passed: the URL did contain
+  // '/invite?email=' and did omit the passcode. Both are true of a broken link.
+  //
+  // The origin is the part that was wrong, so the origin is what this pins. It must
+  // be the WEB app's, which is why APP_BASE_URL is annotated in .env.example as
+  // addressing the web app rather than the API.
+  it('builds the invite link against APP_BASE_URL, not the API origin', async () => {
+    const { mail } = await provisionCapturingMail(fx.owner1, {
+      name: 'Check Origin',
+      email: 'check.origin@acme.test',
+    });
+
+    const url = mail.match(/https?:\/\/\S+/)?.[0] ?? '';
+    const base = process.env.APP_BASE_URL;
+    expect(base).toBeTruthy();
+
+    expect(new URL(url).origin).toBe(new URL(base!).origin);
+    expect(new URL(url).pathname).toBe('/invite');
+
+    // The API's own port is never a valid invite host: setGlobalPrefix('api') means
+    // nothing is served at /invite there, so a link there 404s on click.
+    expect(new URL(url).port).not.toBe(String(process.env.PORT ?? 3000));
+  });
+
   it('records manager.provisioned with no passcode/hash in metadata', async () => {
     const res = await http
       .post('/api/auth/managers')
