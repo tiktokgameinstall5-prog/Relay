@@ -168,6 +168,84 @@ guard = "may you address this row at all", the writing statement = "may you do *
 
 <!-- Add one entry per session, most recent on top -->
 
+### 2026-08-21 — /security-review over the full auth module (#4..#9)
+
+First-pass AI security review driven manually over `a762eaa..HEAD` (tasks #4 Owner
+signup/login/JWT through #9 HTTP isolation gate) — the builtin skill's `origin/HEAD...` diff
+failed (this local repo has no `origin` remote), so the review used the skill's methodology
+over the explicit range. **Per CLAUDE.md §12 this is NOT a substitute for the human review
+that auth/authz/isolation code still requires before merge.** Nothing merged to main.
+
+**No exploitable finding.** No injection (every SQL statement parameterized; the one
+identifier interpolation is `ResourceOwnerGuard`, sourced from the frozen compile-checked
+`OWNED_TABLES` allow-list), no isolation bypass, no auth oracle, no secret in any response
+DTO or `/me` or the invite URL. Verified-correct controls: JWT never trusted for scoping
+(row re-read every request); FORCE RLS + relay_app NOBYPASSRLS with a boot-time refusal;
+SECURITY DEFINER lookups pinned `search_path`, `REVOKE ALL FROM PUBLIC`, EXECUTE to relay_app
+only, no write definers; anti-oracle login (unconditional bcrypt, byte-identical 401s, no
+login MinLength); passcode ~57-bit, `randomInt`, hashed, single-use enforced in the UPDATE
+WHERE; global ValidationPipe whitelist+forbidNonWhitelisted+transform; guard order
+JwtAuthGuard→RolesGuard→ResourceOwnerGuard; refresh rotation locks FOR UPDATE and burns the
+family on reuse.
+
+**Findings (all defense-in-depth or already-tracked launch blockers, none Phase-1-blocking):**
+- **F1 (Low, DiD) — `createTeam` single-layer + no DB org-consistency invariant on
+  `team.manager_id`.** `team_manager_id_fkey` enforces manager *existence*, not org-match;
+  `createTeam`'s cross-org rejection rests solely on one RLS-scoped SELECT (Sabotage-C, logged
+  2026-08-18). Not exploitable today (that SELECT is itself RLS-scoped → cross-org manager
+  invisible → 400), but a single point of failure. Durable fix = composite-FK invariant so
+  `team.(org_id, manager_id)` references a same-org user — **migration `0005`** (0004 slot is
+  taken by `0004_passcode_lookup.sql`). Routed to human review, not applied unilaterally.
+- **F2 (Info, tracked) — TLS boot gate still absent.** The `ff2acfed` commit says
+  `env.validation.ts` should refuse to boot on `NODE_ENV=production` without
+  `sslmode=verify-full`; that check is not in the file yet. Launch blocker #2 above; harmless
+  today (loopback-only), must land before any multi-host deploy.
+- **F3 (Info, tracked) — `0003` grants relay_migrator context-free SELECT on "user".**
+  Accepted trade; tighter design (NOLOGIN BYPASSRLS role owning only the two lookup fns) is a
+  tracked launch blocker, blocked on a superuser credential this dev env lacks.
+- **F4 (Info) — `refreshToken` returned in the JSON body, not an HttpOnly cookie.** Deliberate
+  and documented (AuthResultDto), and consistent with the web client's interim in-memory-token
+  stance. For the shipped web client the standard hardening is an HttpOnly+Secure+SameSite
+  refresh cookie — a conscious decision to make before that client ships, not a Phase-1 bug.
+
+**Part B — the #5 open item ("no member-writable route") re-confirmed as of #9: HOLDS, with a
+shifted mechanism.** `0001_rls.sql` is byte-identical — the `user`/`team` write predicate is
+still `FOR ALL` with no member branch (member's write-slice == manager's). Every #7/#8/#9
+write route to an RLS-governed table excludes members at the app layer: `POST teams`,
+`POST members`, `POST users/:id/passcode` are `@Roles('owner','manager')` (member → 403),
+`POST managers` is `@Roles('owner')`; `first-login` is self-scoped by passcode possession
+(the UPDATE WHERE); `refresh`/`logout` touch only `refresh_token` (no RLS, token-keyed).
+**The nuance: the member barrier is now RolesGuard, not the RLS write-predicate.** So Phase 2's
+first genuinely member-writable route (relay forward / peer hand-off) still cannot lean on
+RLS to scope the write — it must carry its own business-state WHERE clause (the `task_step …
+WHERE assigned_user_id = $2 AND status='active'` pattern above). The line-122 constraint is
+unchanged and now load-bearing for Phase 2.
+
+**F1 fix APPLIED — reviewed per §12, migration 0005 applied, proof made permanent (2026-08-21).**
+Drafted, then human-reviewed and approved, then applied in the same session:
+- `apps/api/src/db/migrations/0005_tenant_fk_invariants.sql` (**applied**) — three composite FKs
+  pinning every cross-row tenant reference to one org: `team.(org_id, manager_id)` and
+  `"user".(org_id, manager_id)` (self-ref) → `"user".(org_id, id)`; `"user".(org_id, team_id)`
+  → `team.(org_id, id)`; plus the `UNIQUE (org_id, id)` targets both tables need as FK anchors.
+  **Additive** (keeps the single-col FKs that own the tested RESTRICT/SET NULL delete
+  behaviour), **idempotent** (DO/`duplicate_object`, like 0000), **ON DELETE NO ACTION**
+  (a composite SET NULL would illegally null the NOT NULL `org_id`; NO ACTION defers to
+  end-of-statement so it coexists with the existing `user_team_id_fkey` SET NULL), **MATCH
+  SIMPLE** (owners have NULL `manager_id`, teamless users NULL `team_id` — MATCH FULL would
+  reject every one of them). Linchpin: RI checks **bypass** RLS (documented PG behaviour), the
+  mirror of the 0002/0003 lesson that SECURITY DEFINER does *not* — so the FK sees the
+  cross-org row the inserting relay_app session cannot, and rejects it (23503, not 42501).
+- The DB-layer proof — an **owner** inserting into their **own** org (passes RLS WITH CHECK) but
+  naming another org's manager/team, which only the composite FK can stop — was **folded into
+  `rls.e2e-spec.ts`'s "schema invariants" block as 5 permanent tests, and the `RUN_0005_TESTS`
+  gate removed** (§11); the standalone `tenant-fk-invariants.e2e-spec.ts` was deleted. The
+  cross-org team is inserted `status='deleted'` to dodge the partial `team_manager_id_active_key`
+  so the composite FK is the sole rejection cause; one test pins SQLSTATE 23503 (FK) vs 42501
+  (RLS); a same-org positive control proves the FK is not blanket-rejecting.
+- Counts after: **test:isolation 59 → 64, test:e2e 205 → 210**, all green. F1 is now closed at
+  the database layer — a mis-attributed cross-org row can no longer be committed even via a path
+  that passes RLS. (Not merged to main; lives on `feat/phase1-provisioning`.)
+
 ### 2026-08-18 — HTTP-layer isolation gate across all Phase 1 routes (task #9 complete)
 
 `http-isolation.e2e-spec.ts` (**25 tests**) is the HTTP companion to `rls.e2e-spec.ts` (34,

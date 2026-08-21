@@ -500,4 +500,106 @@ describe('schema invariants that isolation depends on', () => {
     });
     expect(inserted).toBe(1);
   });
+
+  // --- Composite-FK org-consistency invariants (migration 0005) -----------
+  // The single-column FKs (team_manager_id_fkey, user_manager_id_fkey,
+  // user_team_id_fkey) check that the referenced id EXISTS, not that it shares
+  // the org. RLS does not fill the gap: an owner's WITH CHECK reduces to
+  // `org_id = app_current_org_id()`, leaving manager_id/team_id unconstrained.
+  // So the dangerous row is an OWNER inserting into their OWN org (passes RLS)
+  // while naming another org's manager/team. Only the composite FKs added in
+  // 0005 reject it — and they can, because referential-integrity checks bypass
+  // RLS (the mirror of the SECURITY DEFINER lesson in 0002/0003): the check sees
+  // the cross-org row this session cannot SELECT and refuses it.
+  //
+  // The fixture is itself the positive control for the user-level FKs: seedFixture
+  // (beforeAll) only succeeds because every member's manager_id/team_id already
+  // references a same-org row under these now-applied constraints.
+  describe('composite-FK tenant invariants (org-consistency)', () => {
+    it('rejects a team whose manager belongs to another org', async () => {
+      // org_id = owner1's own org, so the team WITH CHECK passes; managerC is in
+      // org2, so only team_org_id_manager_id_fkey can stop it. status='deleted'
+      // keeps the partial team_manager_id_active_key out of the way, isolating
+      // the composite FK as the sole rejection cause.
+      await expect(
+        withTenant(ctxFor(fx.owner1), async (c) => {
+          await c.query(
+            `INSERT INTO team (id, org_id, manager_id, name, status)
+             VALUES ($1, $2, $3, 'Cross-Org Team', 'deleted')`,
+            [crypto.randomUUID(), fx.org1Id, fx.managerC.id],
+          );
+        }),
+      ).rejects.toThrow(/team_org_id_manager_id_fkey/);
+    });
+
+    it('rejects that team via a FK violation (23503), not a row-level-security error', async () => {
+      // Distinguishes "the FK did the work" from "RLS happened to block it". A
+      // 42501 here would mean RLS stopped the insert and the FK was never
+      // exercised — the assertion above would then be proving nothing.
+      let code: string | undefined;
+      let message = '';
+      try {
+        await withTenant(ctxFor(fx.owner1), async (c) => {
+          await c.query(
+            `INSERT INTO team (id, org_id, manager_id, name, status)
+             VALUES ($1, $2, $3, 'Cross-Org Team 2', 'deleted')`,
+            [crypto.randomUUID(), fx.org1Id, fx.managerC.id],
+          );
+        });
+      } catch (err) {
+        code = (err as { code?: string }).code;
+        message = (err as Error).message;
+      }
+      expect(code).toBe('23503'); // foreign_key_violation, not 42501 (RLS)
+      expect(message).not.toMatch(/row-level security/i);
+    });
+
+    it('accepts a team whose manager belongs to the same org (positive control)', async () => {
+      // Identical to the negative case but for the manager's org — so a blanket-
+      // rejecting FK would fail here. Inserted status='deleted' to stay clear of
+      // team_manager_id_active_key, then removed in the same tx; the FK is checked
+      // on INSERT regardless of status, so reaching the DELETE proves acceptance.
+      const teamId = crypto.randomUUID();
+      const affected = await withTenant(ctxFor(fx.owner1), async (c) => {
+        const res = await c.query(
+          `INSERT INTO team (id, org_id, manager_id, name, status)
+           VALUES ($1, $2, $3, 'Same-Org Team', 'deleted')`,
+          [teamId, fx.org1Id, fx.managerA.id],
+        );
+        await c.query('DELETE FROM team WHERE id = $1', [teamId]);
+        return res.rowCount;
+      });
+      expect(affected).toBe(1);
+    });
+
+    it('rejects a member whose manager belongs to another org', async () => {
+      // manager_id = managerC (org2). user_manager_id_invariant is satisfied
+      // (non-null, != id) and the single-column FK sees managerC exists, so the
+      // composite self-FK is the only constraint that rejects it.
+      await expect(
+        withTenant(ctxFor(fx.owner1), async (c) => {
+          await c.query(
+            `INSERT INTO "user" (id, org_id, role, name, email, manager_id)
+             VALUES (gen_random_uuid(), $1, 'member', 'Cross-Org Managed', $2, $3)`,
+            [fx.org1Id, 'xorg.managed@acme.test', fx.managerC.id],
+          );
+        }),
+      ).rejects.toThrow(/user_org_id_manager_id_fkey/);
+    });
+
+    it("rejects a member placed on another org's team", async () => {
+      // manager_id = managerA (same org, valid) isolates the failure to team_id,
+      // which points at teamC in org2. user_team_id_fkey checks the team exists
+      // (it does); the composite FK enforces same-org.
+      await expect(
+        withTenant(ctxFor(fx.owner1), async (c) => {
+          await c.query(
+            `INSERT INTO "user" (id, org_id, role, name, email, manager_id, team_id)
+             VALUES (gen_random_uuid(), $1, 'member', 'Cross-Org Teamed', $2, $3, $4)`,
+            [fx.org1Id, 'xorg.teamed@acme.test', fx.managerA.id, fx.teamCId],
+          );
+        }),
+      ).rejects.toThrow(/user_org_id_team_id_fkey/);
+    });
+  });
 });
