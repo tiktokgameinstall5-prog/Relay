@@ -4,14 +4,21 @@
  * single request() call, so the interesting behaviour stays in client.ts where
  * it is written down once.
  *
- * Teams and members now DO exist server-side (POST /api/auth/teams and
- * /api/auth/members, task #7), as do refresh/logout/passcode regeneration
- * (task #8). This client still wires none of them on purpose: their screens are
- * Phase 2, and a client function with no screen behind it is just a place for
- * the UI to start pretending a feature is here. They land with those screens.
+ * The three GET list-reads below (teams / managers / team members) now land with
+ * the Phase 2 dashboards that consume them — the rule holds that a client
+ * function only exists once a screen is behind it. Passcode regeneration still
+ * has no screen and stays unwired; refresh/logout are wired in AuthContext, not
+ * here, because they touch the token store in client.ts.
  */
 import { request } from './client';
-import type { AuthResult, ManagerProvisioned, MeResponse } from './types';
+import type {
+  AuthResult,
+  ManagerListRow,
+  ManagerProvisioned,
+  MemberRow,
+  MeResponse,
+  TeamListRow,
+} from './types';
 
 export interface OwnerSignupInput {
   organizationName: string;
@@ -72,4 +79,32 @@ export function managerFirstLogin(input: {
 /** GET /api/me — the authoritative session view, re-read from the row. */
 export function me(): Promise<MeResponse> {
   return request<MeResponse>('/me');
+}
+
+/**
+ * GET /api/auth/teams — the teams the session may see. Owner: every team in the
+ * org; Manager: only their own (RLS scopes it server-side, one query for both).
+ * Counts exclude the manager (§ TeamListRow).
+ */
+export function listTeams(): Promise<TeamListRow[]> {
+  return request<TeamListRow[]>('/auth/teams');
+}
+
+/**
+ * GET /api/auth/managers — Owner-only org-wide manager directory. A manager
+ * calling this gets a 403 (ApiError status 403), not a one-row list of self.
+ */
+export function listManagers(): Promise<ManagerListRow[]> {
+  return request<ManagerListRow[]>('/auth/managers');
+}
+
+/**
+ * GET /api/auth/teams/:id/members — the members-only roster of one team.
+ *
+ * `teamId` is a UUID from our own team list, but it is still encoded: the server
+ * answers a cross-tenant or malformed id with a byte-identical 404 (@OwnedResource
+ * decides that before the DB), so the client never needs to special-case it.
+ */
+export function listTeamMembers(teamId: string): Promise<MemberRow[]> {
+  return request<MemberRow[]>(`/auth/teams/${encodeURIComponent(teamId)}/members`);
 }

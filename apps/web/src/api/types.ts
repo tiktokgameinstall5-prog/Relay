@@ -80,3 +80,68 @@ export interface ManagerProvisioned {
   /** false means the account was still created; the passcode is regenerable. */
   inviteEmailSent: boolean;
 }
+
+/**
+ * One row of GET /api/auth/teams (Owner sees all; Manager sees only their own,
+ * scoped server-side by RLS). Mirrors TeamListRowDto.
+ *
+ * The two counts arrive as numbers — the service already Number()-ed the bigint
+ * the driver hands back as a string. `memberCount` deliberately EXCLUDES the
+ * manager (the count SQL filters role='member'), so a solo team reads 0, not 1.
+ */
+export interface TeamListRow {
+  id: string;
+  name: string;
+  managerId: string;
+  managerName: string;
+  managerEmail: string;
+  /** Active members, not counting the manager. */
+  memberCount: number;
+  /** Active members whose invite is not yet activated (no password set). */
+  pendingInviteCount: number;
+  /** ISO 8601 — serialised from a Date over the wire. */
+  createdAt: string;
+}
+
+/**
+ * One row of GET /api/auth/managers (Owner-only — a manager gets a clean 403,
+ * see the route's §11 note). Mirrors ManagerListRowDto.
+ *
+ * No password/passcode field exists: `pendingInvite` (from `password_hash IS
+ * NULL`) is the only account-state signal, and the hash never leaves the DB.
+ */
+export interface ManagerListRow {
+  id: string;
+  name: string;
+  email: string;
+  status: 'active' | 'inactive';
+  /** Provisioned but not yet activated — no password set. */
+  pendingInvite: boolean;
+  /** The manager's active team, or null if they have not created one. */
+  teamId: string | null;
+  teamName: string | null;
+  /** ISO 8601 — serialised from a Date over the wire. */
+  createdAt: string;
+}
+
+/**
+ * One row of GET /api/auth/teams/:id/members. Mirrors MemberRowDto — exactly the
+ * eight fields decision #4 fixes, no ranking/title/step, no hash, no passcode.
+ *
+ * `role` is typed as the full union to match the source DTO, but the roster is
+ * members-only (the service filters role='member'), so at runtime it is always
+ * 'member' — the manager is rendered from the team header, never as a roster row.
+ */
+export interface MemberRow {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  status: 'active' | 'inactive';
+  /** Provisioned but not yet activated — no password set. */
+  pendingInvite: boolean;
+  /** Always the :id in the path. */
+  teamId: string;
+  /** ISO 8601 — serialised from a Date over the wire. */
+  createdAt: string;
+}
