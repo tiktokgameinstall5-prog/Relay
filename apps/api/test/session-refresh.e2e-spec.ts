@@ -45,6 +45,7 @@ import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { REFRESH_COOKIE } from '../src/auth/cookie';
 import { closePools, migratorPool, truncateAll, withTenant } from './helpers/db';
 import { TEST_PASSWORD } from './helpers/seed';
 
@@ -105,8 +106,25 @@ async function signupOwner(): Promise<AuthBody> {
 /** The supertest request objects, deliberately WITHOUT `.expect()` so callers
  *  choose whether to assert a status or inspect it (the concurrent case needs
  *  the latter). */
-const refresh = (token: string) => http.post('/api/auth/refresh').send({ refreshToken: token });
-const logout = (token: string) => http.post('/api/auth/logout').send({ refreshToken: token });
+const refresh = (token: string) => http.post('/api/auth/session/refresh').send({ refreshToken: token });
+const logout = (token: string) => http.post('/api/auth/session/logout').send({ refreshToken: token });
+
+/** Set-Cookie as a string[] — supertest types it as string, but it is an array
+ *  at runtime, so narrow defensively. */
+const setCookieHeaders = (res: request.Response): string[] => {
+  const raw = res.headers['set-cookie'] as string[] | string | undefined;
+  return Array.isArray(raw) ? raw : raw ? [raw] : [];
+};
+/** The relay_rt Set-Cookie line, if the response set one. */
+const refreshSetCookie = (res: request.Response): string | undefined =>
+  setCookieHeaders(res).find((c) => c.startsWith(`${REFRESH_COOKIE}=`));
+/** The token value carried in the relay_rt Set-Cookie (decoded). Throws if absent. */
+const cookieToken = (res: request.Response): string => {
+  const line = refreshSetCookie(res);
+  if (!line) throw new Error('response set no relay_rt cookie');
+  const value = line.slice(`${REFRESH_COOKIE}=`.length).split(';')[0] ?? '';
+  return decodeURIComponent(value);
+};
 
 /** Soft-deactivate a user through the owner's own RLS context, exactly as the
  *  product will (CLAUDE.md §5 soft delete). FORCE RLS blocks a context-free
@@ -120,7 +138,7 @@ async function deactivate(userId: string, orgId: string): Promise<void> {
 
 // --- rotation ---------------------------------------------------------------
 
-describe('POST /api/auth/refresh — rotation', () => {
+describe('POST /api/auth/session/refresh — rotation', () => {
   it('exchanges a valid token for a fresh access token and a NEW refresh token', async () => {
     const s = await signupOwner();
 
@@ -248,7 +266,7 @@ describe('POST /api/auth/refresh — rotation', () => {
 
 // --- logout -----------------------------------------------------------------
 
-describe('POST /api/auth/logout', () => {
+describe('POST /api/auth/session/logout', () => {
   it('revokes the presented token (204); it can no longer refresh', async () => {
     const s = await signupOwner();
 
@@ -292,5 +310,121 @@ describe('POST /api/auth/logout', () => {
     await logout(s1.refreshToken).expect(204);
     // s2's family is untouched — it still refreshes.
     await refresh(s2.refreshToken).expect(200);
+  });
+});
+
+// --- httpOnly cookie transport ----------------------------------------------
+
+/**
+ * The browser half of the session transport (auth/cookie.ts). The token is set
+ * as an HttpOnly cookie so the page's JS cannot read it (XSS cannot exfiltrate)
+ * yet an F5 keeps the session; the same token is still returned in the body for
+ * the cookie-less Flutter client (CLAUDE.md §6). These tests pin the attributes
+ * that make the cookie safe, the read-from-cookie fallback on refresh, and that
+ * logout both revokes and clears.
+ *
+ * The body's refreshToken equals the cookie's value (asserted first), so the
+ * later tests reuse signupOwner()'s body token AS the cookie value rather than
+ * scraping headers on every setup.
+ */
+describe('httpOnly refresh cookie', () => {
+  it('signup sets an HttpOnly, Secure, SameSite=Lax cookie scoped to /api/auth/session', async () => {
+    const email = freshEmail('owner');
+    const res = await http
+      .post('/api/auth/owner/signup')
+      .send({ organizationName: 'Acme', name: 'Ada Owner', email, password: TEST_PASSWORD })
+      .expect(201);
+
+    const cookie = refreshSetCookie(res);
+    expect(cookie).toBeDefined();
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    expect(cookie).toContain('SameSite=Lax');
+    // The session sub-namespace — the tightest path covering both /session/refresh
+    // and /session/logout, and NOT the broad /api/auth namespace.
+    expect(cookie).toContain('Path=/api/auth/session;');
+    expect(cookie).not.toMatch(/Path=\/api\/auth;/);
+    // A positive Max-Age so the browser persists it across a reload.
+    const maxAge = cookie?.match(/Max-Age=(\d+)/);
+    expect(maxAge).not.toBeNull();
+    expect(Number(maxAge?.[1])).toBeGreaterThan(0);
+    // The cookie carries exactly the body's refresh token.
+    expect(cookieToken(res)).toBe((res.body as AuthBody).refreshToken);
+  });
+
+  it('login sets the same cookie', async () => {
+    const s = await signupOwner();
+    const res = await http
+      .post('/api/auth/login')
+      .send({ email: s.user.email, password: TEST_PASSWORD })
+      .expect(200);
+
+    const cookie = refreshSetCookie(res);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Path=/api/auth/session;');
+    expect(cookieToken(res)).toBe((res.body as AuthBody).refreshToken);
+  });
+
+  it('refreshes from the cookie alone, with no token in the body, and rotates it', async () => {
+    const s = await signupOwner();
+
+    // Body carries no refreshToken; the handler falls back to the cookie.
+    const res = await http
+      .post('/api/auth/session/refresh')
+      .set('Cookie', `${REFRESH_COOKIE}=${s.refreshToken}`)
+      .send({})
+      .expect(200);
+    const body = res.body as AuthBody;
+
+    // Rotated: fresh token in both the body and the new cookie.
+    expect(body.refreshToken).not.toBe(s.refreshToken);
+    expect(cookieToken(res)).toBe(body.refreshToken);
+
+    // The access token minted this way actually authenticates.
+    await http
+      .get('/api/me')
+      .set('Authorization', `Bearer ${body.accessToken}`)
+      .expect(200);
+
+    // The presented cookie token is now spent — replaying it is the uniform 401.
+    await http
+      .post('/api/auth/session/refresh')
+      .set('Cookie', `${REFRESH_COOKIE}=${s.refreshToken}`)
+      .send({})
+      .expect(401);
+  });
+
+  it('still accepts the token in the body (mobile path) and sets the cookie there too', async () => {
+    const s = await signupOwner();
+
+    const res = await refresh(s.refreshToken).expect(200);
+    const body = res.body as AuthBody;
+    // Additive: the body path rotates as before AND now also sets the cookie.
+    expect(cookieToken(res)).toBe(body.refreshToken);
+  });
+
+  it('logout via the cookie clears the cookie and revokes the session', async () => {
+    const s = await signupOwner();
+
+    const res = await http
+      .post('/api/auth/session/logout')
+      .set('Cookie', `${REFRESH_COOKIE}=${s.refreshToken}`)
+      .expect(204);
+
+    // Cleared: empty value, same path so the browser drops the original.
+    const cleared = refreshSetCookie(res);
+    expect(cleared).toBeDefined();
+    expect(cleared).toMatch(/^relay_rt=;/);
+    expect(cleared).toContain('Path=/api/auth/session');
+
+    // And it is genuinely revoked server-side, not merely cleared client-side.
+    await refresh(s.refreshToken).expect(401);
+  });
+
+  it('logout with neither a body token nor a cookie still 204s and clears the cookie', async () => {
+    // A browser that lost its cookie can still "sign out": nothing to revoke, but
+    // the clear must still be sent.
+    const res = await http.post('/api/auth/session/logout').send({}).expect(204);
+    expect(refreshSetCookie(res)).toMatch(/^relay_rt=;/);
   });
 });

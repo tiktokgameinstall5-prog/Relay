@@ -44,8 +44,8 @@
  *                                           tenant target to guess             (note)
  *   3. POST /api/auth/login               — @Public; credential-based, returns
  *                                           only the caller's own identity     auth.e2e
- *   4. POST /api/auth/refresh             — @Public; session isolation         session-refresh
- *   5. POST /api/auth/logout              — @Public; session isolation         HERE + session-refresh
+ *   4. POST /api/auth/session/refresh     — @Public; session isolation         session-refresh
+ *   5. POST /api/auth/session/logout      — @Public; session isolation         HERE + session-refresh
  *   6. POST /api/auth/managers            — Owner-only role gate               HERE
  *   7. POST /api/auth/manager/first-login — @Public alias; credential-based    provisioning specs
  *   8. POST /api/auth/members             — cross-manager / cross-org target   HERE
@@ -775,17 +775,17 @@ describe('§11 HTTP isolation gate', () => {
   });
 
   // --- session routes — one session cannot affect another ---
-  describe('POST /api/auth/logout — session isolation across users', () => {
+  describe('POST /api/auth/session/logout — session isolation across users', () => {
     it('logging out one owner does not touch another owner\'s session', async () => {
       const s1 = await signupOwner();
       const s2 = await signupOwner();
 
-      await http.post('/api/auth/logout').send({ refreshToken: s1.refreshToken }).expect(204);
+      await http.post('/api/auth/session/logout').send({ refreshToken: s1.refreshToken }).expect(204);
 
       // s1 is revoked; s2 is untouched and still refreshes. logout is scoped to
       // the presented token's family and reaches no other user's lineage.
-      await http.post('/api/auth/refresh').send({ refreshToken: s1.refreshToken }).expect(401);
-      await http.post('/api/auth/refresh').send({ refreshToken: s2.refreshToken }).expect(200);
+      await http.post('/api/auth/session/refresh').send({ refreshToken: s1.refreshToken }).expect(401);
+      await http.post('/api/auth/session/refresh').send({ refreshToken: s2.refreshToken }).expect(200);
     });
 
     // The full rotation / single-use / reuse-burns-the-family / anti-oracle matrix

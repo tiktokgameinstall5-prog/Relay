@@ -51,11 +51,11 @@ export class AuthResultDto implements AuthResult {
 
   @ApiProperty({
     description:
-      'Opaque refresh token. Exchange it at POST /api/auth/refresh for a new ' +
+      'Opaque refresh token. Exchange it at POST /api/auth/session/refresh for a new ' +
       'access token before this one expires; each refresh returns a new refresh ' +
-      'token and invalidates the one just used. Store it as securely as the ' +
-      'session itself — see the AuthResult docs for why it is in the body and ' +
-      'not a cookie.',
+      'token and invalidates the one just used. Browser clients also receive it ' +
+      'as an HttpOnly relay_rt cookie and can ignore this field; mobile clients ' +
+      'store this value and send it back in the body — see the AuthResult docs.',
     example: 'yZ3k9Qm2...redacted',
   })
   refreshToken!: string;

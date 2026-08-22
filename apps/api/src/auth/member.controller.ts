@@ -20,9 +20,12 @@ import {
   HttpStatus,
   Inject,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
+import type { Response } from 'express';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -45,11 +48,21 @@ import { CurrentUser } from './decorators/current-user.decorator';
 import type { CurrentUser as CurrentUserType } from '../db/tenant-context';
 import { LoginThrottlerGuard } from './guards/login-throttler.guard';
 import { OwnerThrottlerGuard } from './guards/owner-throttler.guard';
+import { appEnv } from '../config/configuration';
+import { setRefreshCookie } from './cookie';
 
 @ApiTags('auth')
 @Controller('auth')
 export class MemberController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  /** Refresh-cookie lifetime in seconds — see AuthController for the rationale. */
+  private readonly refreshCookieMaxAgeSeconds: number;
+
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(ConfigService) config: ConfigService,
+  ) {
+    this.refreshCookieMaxAgeSeconds = appEnv(config).REFRESH_TOKEN_TTL_DAYS * 86_400;
+  }
 
   /**
    * Owner or Manager. A Manager adds members to their own team (managerId is
@@ -124,7 +137,12 @@ export class MemberController {
   @UseGuards(LoginThrottlerGuard)
   @HttpCode(HttpStatus.OK)
   @Post('first-login')
-  firstLogin(@Body() dto: FirstLoginDto): Promise<AuthResult> {
-    return this.auth.firstLogin(dto);
+  async firstLogin(
+    @Body() dto: FirstLoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResult> {
+    const result = await this.auth.firstLogin(dto);
+    setRefreshCookie(res, result.refreshToken, this.refreshCookieMaxAgeSeconds);
+    return result;
   }
 }

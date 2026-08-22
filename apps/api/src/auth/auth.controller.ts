@@ -5,9 +5,13 @@ import {
   HttpStatus,
   Inject,
   Post,
+  Req,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { SkipThrottle } from '@nestjs/throttler';
+import type { Request, Response } from 'express';
 import {
   ApiConflictResponse,
   ApiCreatedResponse,
@@ -26,11 +30,30 @@ import { AuthResultDto } from './dto/api-response.dto';
 import { Public } from './decorators/public.decorator';
 import { LoginThrottlerGuard } from './guards/login-throttler.guard';
 import { SignupThrottlerGuard } from './guards/signup-throttler.guard';
+import { appEnv } from '../config/configuration';
+import {
+  clearRefreshCookie,
+  readRefreshCookie,
+  setRefreshCookie,
+} from './cookie';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  /**
+   * Cookie lifetime, in seconds, tracking the refresh token's own TTL so the
+   * browser's cookie and the server-side row expire together.
+   */
+  private readonly refreshCookieMaxAgeSeconds: number;
+
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    // Explicit @Inject rather than trusting emitted metadata — see AuthService's
+    // constructor for why (not every runner emits it).
+    @Inject(ConfigService) config: ConfigService,
+  ) {
+    this.refreshCookieMaxAgeSeconds = appEnv(config).REFRESH_TOKEN_TTL_DAYS * 86_400;
+  }
 
   /**
    * The only self-service registration in the product. Managers and Members are
@@ -63,8 +86,13 @@ export class AuthController {
   @SkipThrottle({ login: true, provisioning: true })
   @UseGuards(SignupThrottlerGuard)
   @Post('owner/signup')
-  signup(@Body() dto: OwnerSignupDto): Promise<AuthResult> {
-    return this.auth.ownerSignup(dto);
+  async signup(
+    @Body() dto: OwnerSignupDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResult> {
+    const result = await this.auth.ownerSignup(dto);
+    setRefreshCookie(res, result.refreshToken, this.refreshCookieMaxAgeSeconds);
+    return result;
   }
 
   /**
@@ -96,12 +124,21 @@ export class AuthController {
   @UseGuards(LoginThrottlerGuard)
   @HttpCode(HttpStatus.OK)
   @Post('login')
-  login(@Body() dto: LoginDto): Promise<AuthResult> {
-    return this.auth.passwordLogin(dto);
+  async login(
+    @Body() dto: LoginDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResult> {
+    const result = await this.auth.passwordLogin(dto);
+    setRefreshCookie(res, result.refreshToken, this.refreshCookieMaxAgeSeconds);
+    return result;
   }
 
   /**
    * Exchange a refresh token for a new access token (and a new refresh token).
+   *
+   * The token arrives in the body (mobile) or the HttpOnly relay_rt cookie
+   * (browser); either way the rotated successor is set back as the cookie AND
+   * returned in the body, so both clients stay served (auth/cookie.ts).
    *
    * @Public() because the refresh token IS the credential — the access token it
    * replaces may already have expired, which is the whole reason to refresh. Each
@@ -125,19 +162,34 @@ export class AuthController {
   @Public()
   @SkipThrottle({ login: true, signup: true, provisioning: true })
   @HttpCode(HttpStatus.OK)
-  @Post('refresh')
-  refresh(@Body() dto: RefreshTokenDto): Promise<AuthResult> {
-    return this.auth.refresh(dto.refreshToken);
+  @Post('session/refresh')
+  async refresh(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<AuthResult> {
+    // Body first (mobile), then the HttpOnly cookie (browser). An absent token
+    // falls through as '' and takes the ordinary uniform-401 path in the service
+    // — never a 500 (sha256('') simply matches no row).
+    const token = dto.refreshToken ?? readRefreshCookie(req) ?? '';
+    const result = await this.auth.refresh(token);
+    setRefreshCookie(res, result.refreshToken, this.refreshCookieMaxAgeSeconds);
+    return result;
   }
 
   /**
    * End a session. CLAUDE.md §1/§5: logout only ends the session — no data is
    * affected, and re-entry is the ordinary login flow.
    *
+   * Reads the token from the body (mobile) or the relay_rt cookie (browser), and
+   * ALWAYS clears the cookie — a browser cannot read its own HttpOnly cookie to
+   * send in the body, so the server-side read is the only way its "sign out"
+   * revokes anything.
+   *
    * @Public() and keyed on the token, not an access token: possession of the
    * refresh token authorises revoking it, and a user should be able to sign out
-   * even after their access token has expired. Idempotent — an unknown or
-   * already-revoked token returns 204 all the same. 204 No Content: there is
+   * even after their access token has expired. Idempotent — an unknown, absent,
+   * or already-revoked token returns 204 all the same. 204 No Content: there is
    * nothing to return to a client that just discarded its session.
    */
   @ApiOperation({
@@ -151,8 +203,18 @@ export class AuthController {
   @Public()
   @SkipThrottle({ login: true, signup: true, provisioning: true })
   @HttpCode(HttpStatus.NO_CONTENT)
-  @Post('logout')
-  async logout(@Body() dto: RefreshTokenDto): Promise<void> {
-    await this.auth.logout(dto.refreshToken);
+  @Post('session/logout')
+  async logout(
+    @Body() dto: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    // Revoke whatever token was presented — body (mobile) or cookie (browser).
+    // ALWAYS clear the browser's cookie regardless, so "sign out" empties the
+    // store even if no token reached the server (nothing to revoke, but the
+    // cookie must still go). No token at all is a silent no-op, as before.
+    const token = dto.refreshToken ?? readRefreshCookie(req);
+    if (token) await this.auth.logout(token);
+    clearRefreshCookie(res);
   }
 }

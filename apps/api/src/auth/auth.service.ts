@@ -79,12 +79,14 @@ export interface AuthLookupRow {
 export interface AuthResult {
   accessToken: string;
   /**
-   * Opaque refresh token (see AuthService rotation). Delivered in the response
-   * body, not a cookie, because CLAUDE.md §6 mandates one API shared by the web
-   * app and the Flutter client, and a Set-Cookie only serves the browser. The
-   * cost is that the web client must hold it in memory rather than an
-   * HttpOnly cookie — an accepted trade recorded in PROGRESS.md; a stolen token
-   * still buys only rotation, which reuse-detection then catches.
+   * Opaque refresh token (see AuthService rotation). Delivered BOTH in this
+   * response body AND — on the browser — as an HttpOnly, Secure, SameSite=Lax
+   * cookie the controllers set (auth/cookie.ts). CLAUDE.md §6 mandates one API
+   * shared by the web app and the Flutter client: Flutter has no cookie jar and
+   * reads the token from this body, while the browser holds the cookie its JS
+   * cannot read, so an XSS payload cannot exfiltrate it and an F5 keeps the
+   * session. A stolen token still buys only rotation, which reuse-detection then
+   * catches.
    */
   refreshToken: string;
   user: {
