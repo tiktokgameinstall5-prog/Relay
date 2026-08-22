@@ -1,51 +1,48 @@
 /**
- * Manager provisioning — the only screen wired to a real data endpoint.
+ * Manager provisioning + the owner's manager directory.
  *
  * CLAUDE.md §1: a Manager NEVER self-signs up. The Owner enters name + email,
  * the system generates a single-use passcode, and the invite is emailed. This
- * screen is that flow, and there is no public form anywhere that duplicates it.
+ * screen is that flow, and no public form anywhere duplicates it.
  *
- * WHAT THIS SCREEN CANNOT DO YET, AND WHY IT SAYS SO
+ * The list is the real GET /api/auth/managers read — owner-only by design: a
+ * manager's own "user" RLS slice is {self} ∪ {their members}, so the same query
+ * as a manager would return a one-row list they already hold from /api/me, and
+ * the server 403s them instead. After a create the list is reloaded, so a
+ * provisioned manager shows up as a persisted row, not a session-only echo.
  *
- * There is no GET /api/auth/managers. The list below therefore holds only what
- * this browser session provisioned, and it is labelled as such. Showing an
- * unlabelled list would be the most believable lie in the app: it looks
- * persisted, survives no refresh, and would be discovered in a demo.
+ * The one thing the list read cannot show is the passcode expiry: that lives
+ * only on the create response (the API never returns the passcode itself —
+ * api-response.dto.ts:102-104 — and never re-returns its expiry on a read). So
+ * the success alert below is where the expiry surfaces, once, right after
+ * creation; the standing row afterwards is the plain directory entry.
  */
 import { useState, type FormEvent } from 'react';
 import { Crown, MailCheck, MailWarning, Terminal } from 'lucide-react';
-import { createManager } from '../api/auth';
+import { createManager, listManagers } from '../api/auth';
 import { ApiError } from '../api/client';
-import type { ManagerProvisioned } from '../api/types';
+import type { ManagerListRow, ManagerProvisioned } from '../api/types';
+import { useAsync } from '../lib/useAsync';
+import { AsyncView } from '../components/AsyncView';
 import { Avatar } from '../components/Avatar';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Alert } from '../components/Alert';
 import { ModalShell } from '../components/ModalShell';
 import { StatusChip } from '../components/StatusChip';
-
-function formatExpiry(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return date.toLocaleString('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
+import { fmtDateTime } from '../lib/format';
 
 export function Managers() {
-  const [provisioned, setProvisioned] = useState<ManagerProvisioned[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [lastCreated, setLastCreated] = useState<ManagerProvisioned | null>(null);
+  const { state, reload } = useAsync(() => listManagers());
 
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-5 flex items-center justify-between gap-4">
         <div>
           <h1 className="font-display text-xl font-semibold">Managers</h1>
-          <p className="mt-0.5 text-sm text-[#68707C]">
+          <p className="text-muted mt-0.5 text-sm">
             Managers cannot sign themselves up — you create the account and Relay emails
             them a single-use passcode.
           </p>
@@ -68,7 +65,7 @@ export function Managers() {
                   ? 'The invite email was sent.'
                   : 'The invite email FAILED to send — the account exists and the passcode can be reissued.'}
                 <div className="mt-1">
-                  Passcode expires <strong>{formatExpiry(lastCreated.passcodeExpiresAt)}</strong>.
+                  Passcode expires <strong>{fmtDateTime(lastCreated.passcodeExpiresAt)}</strong>.
                 </div>
                 {/*
                   Not a UI limitation: POST /api/auth/managers has no passcode
@@ -88,56 +85,89 @@ export function Managers() {
         </div>
       )}
 
-      <div className="border-hairline overflow-hidden rounded-xl border bg-white">
-        <div className="border-hairline flex items-center gap-2 border-b px-4 py-3">
-          <Crown size={15} className="text-signal" />
-          <h2 className="font-display text-[14px] font-semibold">
-            Provisioned in this session
-          </h2>
-        </div>
-
-        {provisioned.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-[#9AA1AC]">
-            Nothing provisioned yet in this session.
-          </p>
-        ) : (
-          <ul>
-            {provisioned.map((manager) => (
-              <li
-                key={manager.id}
-                className="border-hairline flex items-center gap-3 border-b px-4 py-3 last:border-0"
-              >
-                <Avatar name={manager.name} size={30} />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium">{manager.name}</div>
-                  <div className="truncate text-[12px] text-[#68707C]">{manager.email}</div>
-                </div>
-                <div className="font-mono hidden text-[11px] text-[#9AA1AC] sm:block">
-                  expires {formatExpiry(manager.passcodeExpiresAt)}
-                </div>
-                <StatusChip status="active" />
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <p className="border-hairline border-t bg-[#FAFAFC] px-4 py-2.5 text-[11px] text-[#9AA1AC]">
-          This list is session-only — the API still has no endpoint to read managers
-          back. Task&nbsp;#7 added creating teams and members, but no list-read, so this
-          shows only what you provisioned in this session.
-        </p>
-      </div>
+      <AsyncView state={state}>
+        {(managers) =>
+          managers.length === 0 ? <EmptyState /> : <ManagerList managers={managers} />
+        }
+      </AsyncView>
 
       {showForm && (
         <CreateManagerModal
           onClose={() => setShowForm(false)}
           onCreated={(manager) => {
-            setProvisioned((current) => [manager, ...current]);
             setLastCreated(manager);
             setShowForm(false);
+            // Refetch so the new manager appears from the authoritative read,
+            // not as a locally-appended optimistic row that a refresh would lose.
+            reload();
           }}
         />
       )}
+    </div>
+  );
+}
+
+function ManagerList({ managers }: { managers: ManagerListRow[] }) {
+  return (
+    <div className="border-hairline overflow-hidden rounded-xl border bg-white">
+      <div className="border-hairline flex items-center gap-2 border-b px-4 py-3">
+        <Crown size={15} className="text-signal" />
+        <h2 className="font-display text-[14px] font-semibold">
+          All managers · {managers.length}
+        </h2>
+      </div>
+      <ul>
+        {managers.map((manager) => (
+          <li
+            key={manager.id}
+            className="border-hairline flex items-center gap-3 border-b px-4 py-3 last:border-0"
+          >
+            <Avatar name={manager.name} size={30} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-medium">{manager.name}</div>
+              <div className="text-muted truncate text-[12px]">{manager.email}</div>
+            </div>
+            {/* Which team they run — or that they have not built one yet, which is
+                worth seeing at a glance in the owner's directory. */}
+            <div className="hidden text-right sm:block">
+              {manager.teamName !== null ? (
+                <span className="text-ink text-[12px]">{manager.teamName}</span>
+              ) : (
+                <span className="text-faint text-[12px] italic">No team yet</span>
+              )}
+            </div>
+            <div className="text-faint hidden font-mono text-[11px] md:block">
+              {fmtDateTime(manager.createdAt)}
+            </div>
+            <ManagerChip manager={manager} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** Account state as a chip, same precedence as the roster's MemberChip so the
+ *  two directories read identically: a not-yet-activated invite → amber
+ *  "Pending", a deactivated account → grey "Deactivated", otherwise blue
+ *  "Active". (StatusChip reuses `pending` for a pending invite — see its note.) */
+function ManagerChip({ manager }: { manager: ManagerListRow }) {
+  if (manager.pendingInvite) return <StatusChip status="pending" />;
+  if (manager.status === 'inactive') return <StatusChip status="inactive" />;
+  return <StatusChip status="active" />;
+}
+
+function EmptyState() {
+  return (
+    <div className="border-hairline rounded-xl border bg-white p-10 text-center">
+      <div className="bg-signal-soft mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
+        <Crown size={22} className="text-signal" />
+      </div>
+      <h2 className="font-display mt-4 text-base font-semibold">No managers yet</h2>
+      <p className="text-muted mx-auto mt-1.5 max-w-md text-sm">
+        Managers can’t sign themselves up. Create the first account — Relay emails them a
+        single-use passcode to activate and build their own team.
+      </p>
     </div>
   );
 }
