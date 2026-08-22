@@ -17,17 +17,19 @@ import { Signup } from './screens/Signup';
 import { Login } from './screens/Login';
 import { Invite } from './screens/Invite';
 import { Managers } from './screens/Managers';
+import { Overview } from './screens/Overview';
+import { Teams } from './screens/Teams';
+import { TeamDetail } from './screens/TeamDetail';
 import { Phase2Stub } from './screens/Phase2Stub';
 import type { UserRole } from './api/types';
 
 /** The dashboard a signed-in user lands on, by role. Every target is a route
  *  that exists — a home pointing at a missing route would bounce off the "*"
- *  catch-all back to "/" and loop. Owner repoints to /overview once that screen
- *  lands (Part B). */
+ *  catch-all back to "/" and loop. */
 function homeFor(role: UserRole): string {
   switch (role) {
     case 'owner':
-      return '/managers';
+      return '/overview';
     case 'manager':
       return '/team';
     case 'member':
@@ -63,6 +65,14 @@ export function App() {
             }
           >
             <Route
+              path="/overview"
+              element={
+                <RequireRole role="owner">
+                  <Overview />
+                </RequireRole>
+              }
+            />
+            <Route
               path="/managers"
               element={
                 <RequireRole role="owner">
@@ -83,11 +93,17 @@ export function App() {
             <Route
               path="/teams"
               element={
-                <Phase2Stub
-                  title="All teams"
-                  what="Every manager's team across the organization — the Owner's full-visibility view."
-                  task="a later task — task #7 shipped creating teams and members, but no read-across-teams view yet"
-                />
+                <RequireRole role="owner">
+                  <Teams />
+                </RequireRole>
+              }
+            />
+            <Route
+              path="/teams/:teamId"
+              element={
+                <RequireRole role="owner">
+                  <TeamDetail />
+                </RequireRole>
               }
             />
             <Route

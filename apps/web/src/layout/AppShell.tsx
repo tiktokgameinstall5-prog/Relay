@@ -23,6 +23,7 @@ import {
   Crown,
   Eye,
   Layers,
+  LayoutDashboard,
   LogOut,
   MessageSquare,
   Trophy,
@@ -39,9 +40,11 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-/** The prototype's own three lists (lines 389-405), by role. */
+/** The prototype's own three lists (lines 389-405), by role — with an Overview
+ *  home added for the owner now that the dashboard exists. */
 const NAV: Record<UserRole, NavItem[]> = {
   owner: [
+    { to: '/overview', label: 'Overview', icon: LayoutDashboard },
     { to: '/managers', label: 'Managers', icon: Crown },
     { to: '/teams', label: 'All teams', icon: Building2 },
     { to: '/tasks', label: 'All tasks', icon: ClipboardList },
