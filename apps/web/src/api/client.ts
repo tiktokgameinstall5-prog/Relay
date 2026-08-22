@@ -10,11 +10,13 @@
  * having code execution inside this module's closure.
  *
  * The cost is real and deliberate: a page refresh drops the token, so the user
- * is signed out. That is acceptable only because refresh-token rotation is
- * task #8 — when a refresh cookie exists, the session is restored on load and
- * the cost disappears. Do NOT "fix" the refresh behaviour by moving the token
- * into storage; that trades a visible inconvenience for an invisible
- * vulnerability.
+ * is signed out. Refresh-token rotation now exists server-side (task #8: POST
+ * /api/auth/refresh returns a fresh pair, the refresh token in the body — not a
+ * cookie). Wiring this client to persist that refresh token and restore the
+ * session on load is a deferred step with its own storage decision, and is NOT
+ * done here — so the refresh-signs-you-out trade still stands. When it is wired,
+ * do NOT "fix" it by moving the ACCESS token into storage; that trades a visible
+ * inconvenience for an invisible vulnerability.
  *
  * Keeping it out of React state also means it is never a prop, never in a
  * dependency array, and never serialised into a devtools snapshot.

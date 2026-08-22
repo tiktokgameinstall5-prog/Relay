@@ -40,10 +40,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   /**
    * No bootstrap-from-storage effect and no 'loading' status: with an
    * in-memory token there is nothing to restore on mount, so the app starts
-   * anonymous every time. When task #8 adds a refresh cookie, a 'loading'
-   * state comes back with it — the refresh call is what needs one.
+   * anonymous every time. Task #8 shipped refresh rotation server-side, so a
+   * restore-on-load path is now buildable — wiring it (and the 'loading' state
+   * the refresh call then needs) is a deferred step, not done here.
    */
   const completeSignIn = useCallback(async (result: AuthResult) => {
+    // result.refreshToken is intentionally dropped here: persisting it is the
+    // deferred restore-on-load work (see api/client.ts). Only the access token
+    // is kept, and only in memory.
     setToken(result.accessToken);
     try {
       const profile = await me();
@@ -60,8 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(() => {
     // Local only. CLAUDE.md §1: "logout only ends the session — no data is
-    // affected". Server-side revocation arrives with refresh rotation (#8);
-    // until then the access token simply expires.
+    // affected". Server-side revocation now exists (task #8: POST /api/auth/
+    // logout), but this client does not call it yet — it belongs with the
+    // deferred refresh-token wiring. Today the access token simply expires.
     clearToken();
     setUser(null);
   }, []);

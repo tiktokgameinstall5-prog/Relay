@@ -23,9 +23,20 @@ export interface AuthUser {
   email: string;
 }
 
-/** POST /api/auth/owner/signup, /api/auth/login, /api/auth/manager/first-login */
+/**
+ * POST /api/auth/owner/signup, /api/auth/login, /api/auth/manager/first-login
+ * (and POST /api/auth/first-login for a member). All return this shape.
+ */
 export interface AuthResult {
   accessToken: string;
+  /**
+   * Opaque refresh token (task #8). Returned in the body, deliberately not as a
+   * cookie — see api-response.dto.ts:51-60. This client does not persist or use
+   * it yet: only the access token is kept, in memory (api/client.ts), so a page
+   * refresh still signs you out. Wiring POST /api/auth/refresh to restore the
+   * session on load is a deferred, security-sensitive step, not done here.
+   */
+  refreshToken: string;
   user: AuthUser;
 }
 

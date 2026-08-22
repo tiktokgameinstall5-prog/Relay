@@ -1,11 +1,14 @@
 /**
- * The five auth endpoints that exist today (task #6). Thin by design — every
- * one is a single request() call, so the interesting behaviour stays in
- * client.ts where it is written down once.
+ * The auth-flow endpoints this client wires: owner signup, login, manager
+ * provisioning, manager first-login, and /me. Thin by design — every one is a
+ * single request() call, so the interesting behaviour stays in client.ts where
+ * it is written down once.
  *
- * Nothing here for teams, members, tasks or rankings: those endpoints do not
- * exist yet (tasks #7+), and a stub client function would be a place for the UI
- * to start pretending they do.
+ * Teams and members now DO exist server-side (POST /api/auth/teams and
+ * /api/auth/members, task #7), as do refresh/logout/passcode regeneration
+ * (task #8). This client still wires none of them on purpose: their screens are
+ * Phase 2, and a client function with no screen behind it is just a place for
+ * the UI to start pretending a feature is here. They land with those screens.
  */
 import { request } from './client';
 import type { AuthResult, ManagerProvisioned, MeResponse } from './types';

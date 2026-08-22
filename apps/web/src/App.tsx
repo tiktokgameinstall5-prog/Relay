@@ -64,7 +64,7 @@ export function App() {
                 <Phase2Stub
                   title="All teams"
                   what="Every manager's team across the organization — the Owner's full-visibility view."
-                  task="task #7 — team creation and member provisioning"
+                  task="a later task — task #7 shipped creating teams and members, but no read-across-teams view yet"
                 />
               }
             />
@@ -74,7 +74,7 @@ export function App() {
                 <Phase2Stub
                   title="My team"
                   what="Your team's members, their role titles, and their workflow step numbers."
-                  task="task #7 — team creation and member provisioning"
+                  task="a later task — task #7 shipped provisioning members, but no endpoint to read a team back yet"
                 />
               }
             />

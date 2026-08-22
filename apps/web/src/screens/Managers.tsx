@@ -122,8 +122,9 @@ export function Managers() {
         )}
 
         <p className="border-hairline border-t bg-[#FAFAFC] px-4 py-2.5 text-[11px] text-[#9AA1AC]">
-          This list is session-only — there is no endpoint to read managers back yet. A
-          persisted list arrives with the team endpoints (task&nbsp;#7).
+          This list is session-only — the API still has no endpoint to read managers
+          back. Task&nbsp;#7 added creating teams and members, but no list-read, so this
+          shows only what you provisioned in this session.
         </p>
       </div>
 

@@ -168,6 +168,58 @@ guard = "may you address this row at all", the writing statement = "may you do *
 
 <!-- Add one entry per session, most recent on top -->
 
+### 2026-08-21 (web) — feat/web-auth-client rebased onto merged main + API-surface reconciliation
+
+The real web auth client (task #17, built while the backend was at task #6) sat on a branch cut
+from `13da62b`. Phase 1's backend work has since merged to main at `24b1052` (#7 teams/members,
+#8 refresh/logout/passcode, #9 HTTP isolation gate, 0005 FK invariants). Rebased the client onto
+that main so it builds against the real, current API surface instead of the #6 snapshot it was
+written against.
+
+**The rebase dropped two of three commits as already-upstream.** The branch had three commits
+above the merge-base: `61ac55a` (the frontend client), `1a44865` (an invite-link port fix), and
+`8482367` (a first-login test fix). The latter two had already reached main independently during
+the Phase 1 merge — `1a44865` as `84178e6` (a literal cherry-pick: same "invite links pointed at
+the API's port" fix) and `8482367` as `09cf26a`. Replaying them would have been an
+empty-or-conflicting no-op (main had already resolved the PROGRESS.md narrative hunk by dropping
+the branch's version). Strategy: `git reset --hard 61ac55a` (keep only the frontend commit) then
+`git rebase main`, which replayed it cleanly as **`4e12ba0`**. Pre-rebase tip preserved at
+`backup/web-auth-client-pre-rebase` (`8482367`).
+
+**`package-lock.json` 3-way-merged with no content change.** The client's `apps/web` dependency
+additions and main's backend changes are non-overlapping, so git auto-merged; `npm install`
+confirmed the merged lockfile needed zero edits (the only churn was CRLF-vs-pinned-LF from the
+install rewrite, reverted with `git checkout --`).
+
+**Reconciliation: one real type fix, the rest stale-comment corrections.** The client was written
+against the #6 API (five endpoints, no teams/members, no refresh). The merged surface falsified
+several of its inline notes and exactly one type:
+
+- **The genuine fix — `AuthResult` was missing `refreshToken` (mirror drift).**
+  `apps/web/src/api/types.ts` hand-mirrors `AuthResultDto` (deliberately not imported, to keep
+  NestJS/class-validator out of the browser bundle); task #8 added `refreshToken` to that DTO, so
+  the mirror was now wrong. Added the field and documented that the client deliberately does
+  **not** persist or use it yet.
+- **Stale comments corrected across six files** (`api/auth.ts`, `api/client.ts`,
+  `auth/AuthContext.tsx`, `layout/AppShell.tsx`, `screens/Managers.tsx`, `App.tsx`): notes saying
+  teams/members/refresh "do not exist yet (tasks #7+)" now say those endpoints shipped
+  server-side (#7/#8) but this client deliberately wires none of them (Phase 2 screens; the
+  refresh-token restore-on-load path is a deferred, security-sensitive step). The `/teams` and
+  `/team` route stubs and the `Managers` session-only-list footer were reworded the same way: the
+  barrier is now "no list-read endpoint / not wired here", not "endpoint doesn't exist".
+
+**The in-memory-token stance is unchanged and must stay.** #8 makes a restore-on-load path
+*buildable* (POST /api/auth/refresh, token in the body not a cookie), but wiring it is deferred
+and carries its own storage decision. The access token stays in a module-scoped `let` (never
+storage/state); the refresh-signs-you-out trade still holds and is still shown in the shell
+banner. Do not "fix" this by moving the access token into storage.
+
+Verified: `npm --workspace apps/web run typecheck` exit 0, `npm --workspace apps/web run build`
+exit 0 (1810 modules, ~2.7s). No backend file touched — the client change cannot move the API
+test counts (test:isolation 64, test:e2e 210 on main). The reconciliation fixes are a **separate**
+commit on top of `4e12ba0` (not amended), so the rebase and the post-rebase corrections stay
+distinguishable in history. Still on `feat/web-auth-client`; not merged to main.
+
 ### 2026-08-21 — /security-review over the full auth module (#4..#9)
 
 First-pass AI security review driven manually over `a762eaa..HEAD` (tasks #4 Owner
