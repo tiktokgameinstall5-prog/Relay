@@ -16,21 +16,26 @@
  *     cross-role request over the wire, with the exact status code each route
  *     promises. Two layers, so a regression in either is caught by the other.
  *
- * NO READ-BY-ID ROUTE EXISTS YET, AND THAT SHAPES THIS FILE
+ * THE READ SURFACE, AND THE READ-BY-ID CASE §11 NAMES DIRECTLY
  *
- * Phase 1 exposes exactly one authenticated read, GET /api/me, and it is
- * self-only: it reads `WHERE u.id = <caller's own id>` under RLS, takes no id
- * param, and cannot address anyone else. So the classic §11 attack — "GET the
- * other manager's resource by id" — has no Phase-1 HTTP surface to run against;
- * read isolation is proven at the DB layer by rls.e2e-spec.ts. What the HTTP
- * surface DOES expose is the WRITE/provisioning routes (which name a target
- * manager or team) and one id-addressed mutation (the passcode re-issue), plus
- * the role gate. Those are the id-guessing surface this gate walks.
+ * Phase 1 exposed exactly one authenticated read, GET /api/me — self-only, no id
+ * param, unable to address anyone else. Phase 2 adds three reads the dashboards
+ * need, and they are the real §11 read surface:
  *
- *   WHEN PHASE 2 ADDS A READ-BY-ID ROUTE (GET /api/tasks/:id, a team board, a
- *   report), ADD IT TO THIS GATE: log in as managerA, request managerB's row by
- *   id, assert 404. That is the literal §11 case, and this is the file it belongs
- *   in. See resource-owner.guard.ts (404-never-403) for why the assertion is 404.
+ *   • GET /api/auth/teams and GET /api/auth/managers are COLLECTION reads with no
+ *     id param. Their isolation is that RLS narrows the collection to the
+ *     caller's slice — an Owner sees their org, a Manager sees only their own
+ *     team — so the gate asserts SET-EQUALITY (the exact ids returned), never a
+ *     bare count, because a count cannot tell {teamA} from {teamB}.
+ *   • GET /api/auth/teams/:id/members IS the classic §11 attack: log in as
+ *     managerA, request managerB's team id, assert 404 — byte-identical to a team
+ *     that does not exist. @OwnedResource on the route is what collapses the
+ *     cross-tenant id, the cross-org id, and the malformed id into one indistinct
+ *     404. See resource-owner.guard.ts (404-never-403) for why 404, not 403.
+ *
+ * The WRITE/provisioning routes (which name a target manager or team) and the one
+ * id-addressed mutation (passcode re-issue) remain part of this gate too — the
+ * id-guessing surface is now both reads and writes.
  *
  * ROUTE INVENTORY (every route the app exposes, and where its isolation is proven)
  *
@@ -47,6 +52,9 @@
  *   9. POST /api/auth/first-login         — @Public canonical; credential-based provisioning specs
  *  10. POST /api/auth/teams               — cross-manager / cross-org target   HERE
  *  11. POST /api/auth/users/:id/passcode  — id-addressed; cross-tenant + role  HERE + passcode-regeneration
+ *  12. GET  /api/auth/teams               — collection read; RLS-scoped set    HERE
+ *  13. GET  /api/auth/managers            — Owner-only collection read         HERE
+ *  14. GET  /api/auth/teams/:id/members   — read-by-id; the literal §11 case   HERE
  *
  * The @Public credential routes (2,3,7,9) are not an id-guessing surface: they
  * carry no tenant target, and their "isolation" is possession of a secret
@@ -391,6 +399,131 @@ describe('§11 HTTP isolation gate', () => {
         .expect(200);
       expect(ids(res.body)).toEqual([fx.teamAId]);
       expect(ids(res.body)).not.toContain(fx.teamBId);
+    });
+  });
+
+  // --- GET /api/auth/teams/:id/members — the literal §11 read-by-id case ---
+  describe('GET /api/auth/teams/:id/members — @OwnedResource makes a foreign id a 404', () => {
+    const ids = (body: unknown) =>
+      (body as Array<{ id: string }>).map((m) => m.id).sort();
+
+    it("managerA reading managerB's team id is 404 — byte-identical to a team that does not exist", async () => {
+      // The reference body for "does not exist": a well-formed uuid that is no
+      // team at all. The cross-tenant guess must match it byte for byte, or it
+      // has disclosed that teamB exists somewhere (resource-owner.guard.ts).
+      const nonexistent = randomUUID();
+      const foreign = await http
+        .get(`/api/auth/teams/${fx.teamBId}/members`)
+        .set('Authorization', bearer(fx.managerA))
+        .expect(404);
+      const absent = await http
+        .get(`/api/auth/teams/${nonexistent}/members`)
+        .set('Authorization', bearer(fx.managerA))
+        .expect(404);
+      expect(foreign.body).toEqual(absent.body);
+    });
+
+    it('a cross-org team id is the same 404 (owner1 → teamC in another org)', async () => {
+      await http
+        .get(`/api/auth/teams/${fx.teamCId}/members`)
+        .set('Authorization', bearer(fx.owner1))
+        .expect(404);
+    });
+
+    it('a malformed (non-uuid) id is 404, not a 500 that leaks "wrong shape"', async () => {
+      await http
+        .get('/api/auth/teams/not-a-uuid/members')
+        .set('Authorization', bearer(fx.managerA))
+        .expect(404);
+    });
+
+    it('managerA sees exactly their own roster {memberA1, memberA2}, not themselves', async () => {
+      const res = await http
+        .get(`/api/auth/teams/${fx.teamAId}/members`)
+        .set('Authorization', bearer(fx.managerA))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.memberA1.id, fx.memberA2.id].sort());
+      // The manager's own user.team_id points at teamA; role='member' keeps them
+      // out of their own roster (else every team's count is off by one).
+      expect(ids(res.body)).not.toContain(fx.managerA.id);
+    });
+
+    it('an Owner reads any team in their org, and the two rosters are disjoint', async () => {
+      const a = await http
+        .get(`/api/auth/teams/${fx.teamAId}/members`)
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      const b = await http
+        .get(`/api/auth/teams/${fx.teamBId}/members`)
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      expect(ids(a.body)).toEqual([fx.memberA1.id, fx.memberA2.id].sort());
+      expect(ids(b.body)).toEqual([fx.memberB1.id, fx.memberB2.id].sort());
+      const overlap = ids(a.body).filter((id) => ids(b.body).includes(id));
+      expect(overlap).toEqual([]);
+    });
+
+    it('a Member is refused (403) — the roster is Owner/Manager only', async () => {
+      await http
+        .get(`/api/auth/teams/${fx.teamAId}/members`)
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(403);
+    });
+
+    it('a forged role=owner claim does not widen a Manager past @OwnedResource', async () => {
+      // The 'owner' claim is a lie: JwtStrategy rebuilds BOTH role and managerId
+      // from managerA's row, so RolesGuard sees 'manager' (allowed) and the guard
+      // probes teamB under managerA's real tenant context — still invisible → 404.
+      const token = forgedToken({
+        sub: fx.managerA.id,
+        role: 'owner',
+        orgId: fx.org1Id,
+        managerId: fx.managerA.id,
+      });
+      await http
+        .get(`/api/auth/teams/${fx.teamBId}/members`)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('each row is EXACTLY the decision-#4 whitelist — no hash, no ranking/title/step', async () => {
+      const res = await http
+        .get(`/api/auth/teams/${fx.teamAId}/members`)
+        .set('Authorization', bearer(fx.managerA))
+        .expect(200);
+      const rows = res.body as Array<Record<string, unknown>>;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(Object.keys(row).sort()).toEqual([
+          'createdAt',
+          'email',
+          'id',
+          'name',
+          'pendingInvite',
+          'role',
+          'status',
+          'teamId',
+        ]);
+      }
+    });
+
+    it('pendingInvite tracks activation; a freshly-added member reads true', async () => {
+      const pendingId = await provisionMember(fx.managerA);
+      const res = await http
+        .get(`/api/auth/teams/${fx.teamAId}/members`)
+        .set('Authorization', bearer(fx.managerA))
+        .expect(200);
+      const rows = res.body as Array<{
+        id: string;
+        pendingInvite: boolean;
+        teamId: string;
+      }>;
+      const pending = rows.find((m) => m.id === pendingId);
+      expect(pending?.pendingInvite).toBe(true);
+      expect(pending?.teamId).toBe(fx.teamAId);
+      // The activated fixture members read false — the flag is real, not constant.
+      const activated = rows.find((m) => m.id === fx.memberA1.id);
+      expect(activated?.pendingInvite).toBe(false);
     });
   });
 

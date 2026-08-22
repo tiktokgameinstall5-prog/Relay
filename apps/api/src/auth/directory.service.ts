@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { DbService } from '../db/db.service';
+import type { UserRole } from '../db/tenant-context';
 
 /**
  * Read side of the directory — the list endpoints the dashboards read back
@@ -42,6 +43,24 @@ export interface ManagerListRow {
   /** The manager's active team, or null if they have not created one yet. */
   teamId: string | null;
   teamName: string | null;
+  createdAt: Date;
+}
+
+export interface MemberRow {
+  id: string;
+  name: string;
+  email: string;
+  /**
+   * The column's domain is the full UserRole union, but this roster is filtered
+   * to members (see the SQL), so in practice this is always 'member'. Typed as
+   * the union to avoid an assertion; the DTO documents the single value.
+   */
+  role: UserRole;
+  status: 'active' | 'inactive';
+  /** True while the account is provisioned but not activated (no password set). */
+  pendingInvite: boolean;
+  /** Always the :id in the path — the team this member belongs to. */
+  teamId: string;
   createdAt: Date;
 }
 
@@ -151,6 +170,58 @@ export class DirectoryService {
       pendingInvite: r.pending_invite,
       teamId: r.team_id,
       teamName: r.team_name,
+      createdAt: r.created_at,
+    }));
+  }
+
+  /**
+   * The members of one team — the roster behind GET /api/auth/teams/:id/members.
+   * Owner or Manager; the route's @OwnedResource has already proven the team id
+   * is inside the caller's slice (a byte-identical 404 otherwise), so by the time
+   * this runs $1 is a team the caller may read.
+   *
+   * `WHERE u.team_id = $1` is load-bearing, not a convenience filter: the "user"
+   * RLS policy has NO team_id term, so for an OWNER session — which sees every
+   * user in the org — this predicate is the ONLY thing scoping the result to this
+   * one team. `AND u.role = 'member'` keeps the manager, whose own user.team_id
+   * points at their team (auth.service.ts createTeam), out of their own roster;
+   * the team header renders the manager, and a roster row would double-count them.
+   *
+   * The hash never enters the row type — the `password_hash IS NULL` boolean is
+   * selected as pending_invite, same discipline as listManagers.
+   */
+  async listTeamMembers(teamId: string): Promise<MemberRow[]> {
+    const rows = await this.db.tx(async (c) => {
+      const result = await c.query<{
+        id: string;
+        name: string;
+        email: string;
+        role: UserRole;
+        status: 'active' | 'inactive';
+        pending_invite: boolean;
+        team_id: string;
+        created_at: Date;
+      }>(
+        `SELECT u.id, u.name, u.email, u.role, u.status,
+                u.password_hash IS NULL AS pending_invite,
+                u.team_id, u.created_at
+           FROM "user" u
+          WHERE u.team_id = $1
+            AND u.role = 'member'
+          ORDER BY u.name ASC, u.id ASC`,
+        [teamId],
+      );
+      return result.rows;
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      role: r.role,
+      status: r.status,
+      pendingInvite: r.pending_invite,
+      teamId: r.team_id,
       createdAt: r.created_at,
     }));
   }

@@ -7,7 +7,7 @@
  * manager — so this is @Roles('owner','manager'), and the service decides which
  * manager the team belongs to from the caller.
  */
-import { Body, Controller, Get, Inject, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Param, Post, UseGuards } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import {
   ApiBadRequestResponse,
@@ -15,6 +15,7 @@ import {
   ApiConflictResponse,
   ApiCreatedResponse,
   ApiForbiddenResponse,
+  ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
@@ -22,10 +23,11 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
-import { DirectoryService, type TeamListRow } from './directory.service';
+import { DirectoryService, type MemberRow, type TeamListRow } from './directory.service';
 import { CreateTeamDto } from './dto/create-team.dto';
-import { TeamCreatedDto, TeamListRowDto } from './dto/api-response.dto';
+import { MemberRowDto, TeamCreatedDto, TeamListRowDto } from './dto/api-response.dto';
 import { Roles } from './decorators/roles.decorator';
+import { OwnedResource } from './decorators/owned-resource.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
 import type { CurrentUser as CurrentUserType } from '../db/tenant-context';
 import { OwnerThrottlerGuard } from './guards/owner-throttler.guard';
@@ -101,5 +103,44 @@ export class TeamController {
   @Get('teams')
   listTeams(): Promise<TeamListRow[]> {
     return this.directory.listTeams();
+  }
+
+  /**
+   * The roster of one team. Owner → any team in their org; Manager → their own.
+   *
+   * Two checks, deliberately separate. @OwnedResource({ table: 'team', param:
+   * 'id' }) runs before the handler and answers "may you address this id at
+   * all": a cross-tenant, cross-org, or malformed id is a byte-identical 404, so
+   * a team outside the caller's slice is unreachable and indistinguishable from
+   * one that never existed. The service's `WHERE team_id = $1` then answers
+   * "which rows belong to it" — and is itself load-bearing for owner sessions,
+   * whose RLS does not scope by team. Both halves are needed; see the guard's
+   * header for why the guard alone is not sufficient.
+   *
+   * A READ, like listTeams above: no throttler, no @SkipThrottle, no
+   * @CurrentUser — the ambient tenant context drives the scoping.
+   */
+  @ApiOperation({
+    summary: "List a team's members",
+    description:
+      'Owner or Manager. The members of the team, each with a pendingInvite ' +
+      'flag; the manager is not a roster row. A team id outside the caller\'s ' +
+      'slice — another manager\'s team, another organization, or a malformed id ' +
+      '— is a 404 identical to a team that does not exist.',
+  })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: MemberRowDto, isArray: true })
+  @ApiForbiddenResponse({ description: 'Caller is neither an Owner nor a Manager.' })
+  @ApiNotFoundResponse({
+    description:
+      "No such team in the caller's slice — byte-identical to a cross-tenant, " +
+      'cross-org, or malformed id.',
+  })
+  @ApiUnauthorizedResponse({ description: 'Missing, expired, or invalid token.' })
+  @Roles('owner', 'manager')
+  @OwnedResource({ table: 'team', param: 'id' })
+  @Get('teams/:id/members')
+  listTeamMembers(@Param('id') id: string): Promise<MemberRow[]> {
+    return this.directory.listTeamMembers(id);
   }
 }

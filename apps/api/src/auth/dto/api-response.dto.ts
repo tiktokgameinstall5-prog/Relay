@@ -14,7 +14,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { AuthResult } from '../auth.service';
 import type { MeResponse } from '../me.service';
-import type { ManagerListRow, TeamListRow } from '../directory.service';
+import type { ManagerListRow, MemberRow, TeamListRow } from '../directory.service';
 import type { UserRole } from '../../db/tenant-context';
 
 const UUID_EXAMPLE = '3f1c8a4e-9b2d-4c7a-8e15-2d6b0f9a1c33';
@@ -326,6 +326,50 @@ export class ManagerListRowDto implements ManagerListRow {
 
   @ApiProperty({ type: String, nullable: true, example: null })
   teamName!: string | null;
+
+  @ApiProperty({ format: 'date-time', example: '2026-08-08T12:34:56.789Z' })
+  createdAt!: Date;
+}
+
+/**
+ * One row of GET /api/auth/teams/:id/members. `implements MemberRow` for the
+ * same drift-protection as the others. The roster is members-only (the service
+ * filters `role = 'member'`), so `role` documents as the single value 'member'
+ * even though the column's TS type is the full UserRole union. Exactly the eight
+ * fields decision #4 fixes — no hash, no passcode, no ranking/title/step.
+ */
+export class MemberRowDto implements MemberRow {
+  @ApiProperty({ format: 'uuid', example: UUID_EXAMPLE })
+  id!: string;
+
+  @ApiProperty({ example: 'Sam Member' })
+  name!: string;
+
+  @ApiProperty({ format: 'email', example: 'sam@acme.test' })
+  email!: string;
+
+  @ApiProperty({
+    enum: ['member'],
+    example: 'member',
+    description: 'Always "member" — the manager is not a roster row.',
+  })
+  role!: UserRole;
+
+  @ApiProperty({ enum: ['active', 'inactive'], example: 'active' })
+  status!: 'active' | 'inactive';
+
+  @ApiProperty({
+    description: 'Provisioned but not yet activated — no password set.',
+    example: false,
+  })
+  pendingInvite!: boolean;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The team this member belongs to — always the :id in the path.',
+    example: UUID_EXAMPLE,
+  })
+  teamId!: string;
 
   @ApiProperty({ format: 'date-time', example: '2026-08-08T12:34:56.789Z' })
   createdAt!: Date;
