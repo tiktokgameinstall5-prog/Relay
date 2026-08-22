@@ -32,6 +32,21 @@ export function duration(startIso: string | null | undefined, endIso?: string | 
   return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
 }
 
+/**
+ * A known elapsed span given directly in seconds, as "45m" / "3h 20m" / "2d 4h";
+ * em dash when null/undefined. The seconds-based sibling of duration(): use it
+ * when the span is already recorded (a relay step's own time) rather than derived
+ * from a start/end pair. Same ladder as duration() so the two read identically.
+ */
+export function durationFromSeconds(seconds: number | null | undefined): string {
+  if (seconds == null) return '—';
+  const mins = Math.round(seconds / 60);
+  if (mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m`;
+  return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
+}
+
 /** Compact "22 Aug, 14:30" date+time (en-GB, 24h); em dash when absent. */
 export function fmtDateTime(iso: string | null | undefined): string {
   if (!iso) return '—';
