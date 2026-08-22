@@ -21,6 +21,22 @@
   --color-cool-slate: #f4f5f8;
   --color-hairline: #e4e7ec;
 
+  /* Extended palette — same source of truth (workspace-relay-prototype.jsx).
+     muted/faint/gray are the C object's secondary-text, faint-text and disabled
+     shades (C.muted/faint/gray). wash/hairline-soft/done-soft are values the
+     prototype uses inline: row-hover & table headers #FAFAFC, avatar + ranking
+     track fill #EEF0F3, and the relay check-mark fill #E7FBF1. signal-hover and
+     signal-disabled formalise the arbitrary values already living in Button.tsx
+     so Phase 2 screens reference tokens instead of re-hardcoding hexes. */
+  --color-muted: #68707c;
+  --color-faint: #9aa1ac;
+  --color-gray: #c4c7d0;
+  --color-wash: #fafafc;
+  --color-hairline-soft: #eef0f3;
+  --color-done-soft: #e7fbf1;
+  --color-signal-hover: #2c46d8;
+  --color-signal-disabled: #a9b5f8;
+
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;

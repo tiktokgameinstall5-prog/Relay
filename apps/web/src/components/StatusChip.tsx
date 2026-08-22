@@ -7,6 +7,14 @@
  * Only the statuses something actually renders today are here. Task statuses
  * (in_progress / scheduled) arrive with the workflow engine in Phase 2 and are
  * added when there is a task to put them on.
+ *
+ * Deliberate divergence from the prototype: there, `pending` (amber) is a relay
+ * step still waiting its turn. Until tasks exist, this app reuses the same amber
+ * `pending` chip for a *pending invite* — an account provisioned but not yet
+ * activated (password_hash IS NULL). Same visual, different domain; kept on
+ * purpose so the dashboards get an invite-state chip without inventing a colour.
+ * When the workflow engine lands, `pending` regains its step meaning and
+ * invite-state takes its own label if the two ever need to coexist.
  */
 const VARIANTS = {
   active: { className: 'bg-active', label: 'Active' },
