@@ -14,6 +14,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { AuthResult } from '../auth.service';
 import type { MeResponse } from '../me.service';
+import type { TeamListRow } from '../directory.service';
 import type { UserRole } from '../../db/tenant-context';
 
 const UUID_EXAMPLE = '3f1c8a4e-9b2d-4c7a-8e15-2d6b0f9a1c33';
@@ -244,5 +245,48 @@ export class PasscodeRegeneratedDto {
     example: true,
   })
   inviteEmailSent!: boolean;
+}
+
+/**
+ * One row of GET /api/auth/teams. `implements TeamListRow` so a field renamed in
+ * the service is a compile error here, not silent doc drift. The two counts are
+ * numbers (the service already `Number()`-ed the bigint the driver returns as a
+ * string), and `memberCount` deliberately excludes the manager — see the service
+ * SQL note.
+ */
+export class TeamListRowDto implements TeamListRow {
+  @ApiProperty({ format: 'uuid', example: UUID_EXAMPLE })
+  id!: string;
+
+  @ApiProperty({ example: 'Delivery Squad' })
+  name!: string;
+
+  @ApiProperty({
+    format: 'uuid',
+    description: 'The manager who owns this team.',
+    example: UUID_EXAMPLE,
+  })
+  managerId!: string;
+
+  @ApiProperty({ example: 'Morgan Manager' })
+  managerName!: string;
+
+  @ApiProperty({ format: 'email', example: 'morgan@acme.test' })
+  managerEmail!: string;
+
+  @ApiProperty({
+    description: 'Active members on the team, not counting the manager.',
+    example: 4,
+  })
+  memberCount!: number;
+
+  @ApiProperty({
+    description: 'Active members whose invite is not yet activated (no password set).',
+    example: 1,
+  })
+  pendingInviteCount!: number;
+
+  @ApiProperty({ format: 'date-time', example: '2026-08-08T12:34:56.789Z' })
+  createdAt!: Date;
 }
 

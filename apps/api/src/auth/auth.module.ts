@@ -12,6 +12,7 @@ import { MemberController } from './member.controller';
 import { InviteController } from './invite.controller';
 import { MeController } from './me.controller';
 import { MeService } from './me.service';
+import { DirectoryService } from './directory.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { MailModule } from '../mail/mail.module';
 
@@ -45,7 +46,7 @@ import { MailModule } from '../mail/mail.module';
     InviteController,
     MeController,
   ],
-  providers: [AuthService, MeService, JwtStrategy],
+  providers: [AuthService, MeService, DirectoryService, JwtStrategy],
   // AuthService is exported because JwtStrategy needs lookupById, and later
   // modules (manager/member provisioning, task #6-7) will need the same lookups.
   exports: [AuthService],

@@ -85,8 +85,8 @@ import type { NestExpressApplication } from '@nestjs/platform-express';
 import { sign } from 'jsonwebtoken';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
-import { closePools, truncateAll } from './helpers/db';
-import { seedFixture, type Fixture, type SeededUser } from './helpers/seed';
+import { closePools, truncateAll, withTenant } from './helpers/db';
+import { ctxFor, seedFixture, type Fixture, type SeededUser } from './helpers/seed';
 import { bearer } from './helpers/token';
 
 jest.setTimeout(30_000);
@@ -275,6 +275,122 @@ describe('§11 HTTP isolation gate', () => {
 
     it('rejects a missing token (401)', async () => {
       await http.get('/api/me').expect(401);
+    });
+  });
+
+  // --- GET /api/auth/teams — owner sees the org; a manager sees only their team ---
+  describe('GET /api/auth/teams — RLS scopes the list; counts exclude the manager', () => {
+    const ids = (body: unknown) =>
+      (body as Array<{ id: string }>).map((t) => t.id).sort();
+
+    it('an Owner sees every team in their org and no other org\'s (set equality)', async () => {
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.teamAId, fx.teamBId].sort());
+      // Spelled-out negative: teamC (org2) is absent, not merely "length 2".
+      expect(ids(res.body)).not.toContain(fx.teamCId);
+    });
+
+    it('owner2 sees only their own org\'s team (mirror)', async () => {
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.owner2))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.teamCId]);
+      expect(ids(res.body)).not.toContain(fx.teamAId);
+      expect(ids(res.body)).not.toContain(fx.teamBId);
+    });
+
+    it('a Manager sees EXACTLY their own team, never a sibling manager\'s (§11)', async () => {
+      // Also the tripwire for `JOIN "user" m ON m.id = t.manager_id`: a manager can
+      // see their OWN row (manager_id = self), so the join resolves and teamA comes
+      // back. If that self-visibility ever regressed, this returns [] and fails.
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.managerA))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.teamAId]);
+      expect(ids(res.body)).not.toContain(fx.teamBId);
+    });
+
+    it('a forged role=owner / managerId claim does NOT widen the list [gate]', async () => {
+      // managerA's token, lying that they are an owner in org1. JwtStrategy re-reads
+      // the row, so role stays 'manager' and scope stays teamA — the forged claims
+      // buy no extra teams. RolesGuard admits 'owner' too, so this isolates the DATA
+      // scope from the role gate: a would-be owner still sees only managerA's team.
+      const token = forgedToken({
+        sub: fx.managerA.id,
+        role: 'owner',
+        orgId: fx.org1Id,
+        managerId: null,
+      });
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.teamAId]);
+      expect(ids(res.body)).not.toContain(fx.teamBId);
+    });
+
+    it('a Member is refused (403 — the action, not a hidden list)', async () => {
+      await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(403);
+    });
+
+    it('member_count counts active members and EXCLUDES the manager (teamA → 2, not 3)', async () => {
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.managerA))
+        .expect(200);
+      const teamA = (res.body as Array<{ id: string; memberCount: number }>).find(
+        (t) => t.id === fx.teamAId,
+      );
+      // managerA's own user.team_id points at teamA (createTeam sets it); the
+      // role='member' count filter is what keeps them out of this number.
+      expect(teamA?.memberCount).toBe(2);
+    });
+
+    it('pending_invite_count counts only password-less members', async () => {
+      // Every fixture member has a password → 0 pending. Provision one fresh member
+      // on teamA (no password set yet) and teamA reads 1 pending / 3 active members
+      // while teamB stays 0 — proving the count tracks password_hash IS NULL.
+      await provisionMember(fx.managerA);
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      const rows = res.body as Array<{
+        id: string;
+        memberCount: number;
+        pendingInviteCount: number;
+      }>;
+      const teamA = rows.find((t) => t.id === fx.teamAId);
+      const teamB = rows.find((t) => t.id === fx.teamBId);
+      expect(teamA?.pendingInviteCount).toBe(1);
+      expect(teamA?.memberCount).toBe(3);
+      expect(teamB?.pendingInviteCount).toBe(0);
+    });
+
+    it('a soft-deleted team is absent from the list (status filter, not just RLS)', async () => {
+      // The team policy has NO status term, so RLS still shows a deleted team;
+      // `WHERE t.status = 'active'` is the load-bearing filter. Soft-delete teamB
+      // through the owner's own tenant context — the path a real delete will take —
+      // and confirm it drops out while teamA remains.
+      await withTenant(ctxFor(fx.owner1), (c) =>
+        c.query("UPDATE team SET status = 'deleted', deleted_at = now() WHERE id = $1", [
+          fx.teamBId,
+        ]),
+      );
+      const res = await http
+        .get('/api/auth/teams')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.teamAId]);
+      expect(ids(res.body)).not.toContain(fx.teamBId);
     });
   });
 
