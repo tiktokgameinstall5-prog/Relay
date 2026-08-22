@@ -1,26 +1,48 @@
 /**
  * Routing.
  *
- * Three public routes (signup / login / invite) and everything else behind
- * RequireAuth inside the AppShell. Route-level role gating is ergonomics only —
- * RolesGuard on the server is what enforces CLAUDE.md §1 (see RequireRole).
+ * "/" is PUBLIC — RootGate shows the marketing Landing to anonymous visitors and
+ * redirects signed-in users to their dashboard. Signup / login / invite are the
+ * other public routes; everything else sits behind RequireAuth inside the
+ * AppShell. Route-level role gating is ergonomics only — RolesGuard on the server
+ * is what enforces CLAUDE.md §1 (see RequireRole).
  */
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { RequireRole } from './auth/RequireRole';
 import { AppShell } from './layout/AppShell';
+import { Landing } from './screens/landing/Landing';
 import { Signup } from './screens/Signup';
 import { Login } from './screens/Login';
 import { Invite } from './screens/Invite';
 import { Managers } from './screens/Managers';
 import { Phase2Stub } from './screens/Phase2Stub';
+import type { UserRole } from './api/types';
 
-/** Where "/" lands, by role — an Owner's first job is provisioning managers. */
-function HomeRedirect() {
-  const { user } = useAuth();
-  if (user === null) return <Navigate to="/login" replace />;
-  return <Navigate to={user.role === 'owner' ? '/managers' : '/tasks'} replace />;
+/** The dashboard a signed-in user lands on, by role. Every target is a route
+ *  that exists — a home pointing at a missing route would bounce off the "*"
+ *  catch-all back to "/" and loop. Owner repoints to /overview once that screen
+ *  lands (Part B). */
+function homeFor(role: UserRole): string {
+  switch (role) {
+    case 'owner':
+      return '/managers';
+    case 'manager':
+      return '/team';
+    case 'member':
+      return '/tasks';
+  }
+}
+
+/** "/" — the public front door. Anonymous → the marketing Landing (URL stays
+ *  "/", not a redirect to /login); signed-in → their role's dashboard. */
+function RootGate() {
+  const { status, user } = useAuth();
+  if (status === 'authed' && user !== null) {
+    return <Navigate to={homeFor(user.role)} replace />;
+  }
+  return <Landing />;
 }
 
 export function App() {
@@ -28,6 +50,7 @@ export function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/" element={<RootGate />} />
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/invite" element={<Invite />} />
@@ -39,7 +62,6 @@ export function App() {
               </RequireAuth>
             }
           >
-            <Route path="/" element={<HomeRedirect />} />
             <Route
               path="/managers"
               element={
