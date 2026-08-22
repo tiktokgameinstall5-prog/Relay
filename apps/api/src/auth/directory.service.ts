@@ -32,6 +32,19 @@ export interface TeamListRow {
   createdAt: Date;
 }
 
+export interface ManagerListRow {
+  id: string;
+  name: string;
+  email: string;
+  status: 'active' | 'inactive';
+  /** True while the account is provisioned but not activated (no password set). */
+  pendingInvite: boolean;
+  /** The manager's active team, or null if they have not created one yet. */
+  teamId: string | null;
+  teamName: string | null;
+  createdAt: Date;
+}
+
 @Injectable()
 export class DirectoryService {
   constructor(@Inject(DbService) private readonly db: DbService) {}
@@ -91,6 +104,53 @@ export class DirectoryService {
       managerEmail: r.manager_email,
       memberCount: Number(r.member_count),
       pendingInviteCount: Number(r.pending_invite_count),
+      createdAt: r.created_at,
+    }));
+  }
+
+  /**
+   * Every manager in the organization — Owner-only (the route enforces
+   * @Roles('owner')). A manager's own "user" RLS slice is {self} ∪ {their
+   * members}, so filtering that to role='manager' would return only themselves:
+   * a broken one-element list they already have from /api/me. Owner-only turns
+   * that into a clean 403 instead of a misleading success.
+   *
+   * The password hash never enters the row type: the query selects only the
+   * `password_hash IS NULL` boolean, so there is no hash column to forget to
+   * strip in the map. The LEFT JOIN is filtered to active teams so a manager
+   * whose team was soft-deleted reads as teamless rather than carrying a dead id.
+   */
+  async listManagers(): Promise<ManagerListRow[]> {
+    const rows = await this.db.tx(async (c) => {
+      const result = await c.query<{
+        id: string;
+        name: string;
+        email: string;
+        status: 'active' | 'inactive';
+        pending_invite: boolean;
+        team_id: string | null;
+        team_name: string | null;
+        created_at: Date;
+      }>(
+        `SELECT u.id, u.name, u.email, u.status, u.created_at,
+                u.password_hash IS NULL AS pending_invite,
+                t.id AS team_id, t.name AS team_name
+           FROM "user" u
+           LEFT JOIN team t ON t.manager_id = u.id AND t.status = 'active'
+          WHERE u.role = 'manager'
+          ORDER BY u.name ASC, u.id ASC`,
+      );
+      return result.rows;
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      status: r.status,
+      pendingInvite: r.pending_invite,
+      teamId: r.team_id,
+      teamName: r.team_name,
       createdAt: r.created_at,
     }));
   }

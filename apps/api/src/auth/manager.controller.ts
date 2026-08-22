@@ -10,6 +10,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -29,9 +30,10 @@ import {
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { AuthService, type AuthResult } from './auth.service';
+import { DirectoryService, type ManagerListRow } from './directory.service';
 import { CreateManagerDto } from './dto/create-manager.dto';
 import { FirstLoginDto } from './dto/first-login.dto';
-import { AuthResultDto, ManagerProvisionedDto } from './dto/api-response.dto';
+import { AuthResultDto, ManagerListRowDto, ManagerProvisionedDto } from './dto/api-response.dto';
 import { Public } from './decorators/public.decorator';
 import { Roles } from './decorators/roles.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -42,7 +44,10 @@ import { OwnerThrottlerGuard } from './guards/owner-throttler.guard';
 @ApiTags('auth')
 @Controller('auth')
 export class ManagerController {
-  constructor(@Inject(AuthService) private readonly auth: AuthService) {}
+  constructor(
+    @Inject(AuthService) private readonly auth: AuthService,
+    @Inject(DirectoryService) private readonly directory: DirectoryService,
+  ) {}
 
   /**
    * Owner-only. CLAUDE.md §1: a Manager never self-signs up.
@@ -81,6 +86,31 @@ export class ManagerController {
     @Body() dto: CreateManagerDto,
   ) {
     return this.auth.createManager(actor, dto);
+  }
+
+  /**
+   * List every manager in the organization. Owner-only: a Manager's own RLS
+   * slice would reduce this to just themselves — a misleading one-row list they
+   * already hold from /api/me — so @Roles('owner') refuses them a clean 403
+   * rather than returning that. A READ block (me.controller 25-37): no throttler
+   * guard, no @SkipThrottle. The passcode is never in the response — only the
+   * `pendingInvite` boolean, which is why the service selects no hash column.
+   */
+  @ApiOperation({
+    summary: 'List all managers in the organization (Owner only)',
+    description:
+      'Owner only. Every manager in the org, each with their active team (or ' +
+      'null) and a pendingInvite flag for accounts not yet activated. A Manager ' +
+      'or Member is refused — this is an org-wide view no non-owner may hold.',
+  })
+  @ApiBearerAuth()
+  @ApiOkResponse({ type: ManagerListRowDto, isArray: true })
+  @ApiForbiddenResponse({ description: 'Caller is not an Owner.' })
+  @ApiUnauthorizedResponse({ description: 'Missing, expired, or invalid token.' })
+  @Roles('owner')
+  @Get('managers')
+  listManagers(): Promise<ManagerListRow[]> {
+    return this.directory.listManagers();
   }
 
   /**

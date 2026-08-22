@@ -14,7 +14,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import type { AuthResult } from '../auth.service';
 import type { MeResponse } from '../me.service';
-import type { TeamListRow } from '../directory.service';
+import type { ManagerListRow, TeamListRow } from '../directory.service';
 import type { UserRole } from '../../db/tenant-context';
 
 const UUID_EXAMPLE = '3f1c8a4e-9b2d-4c7a-8e15-2d6b0f9a1c33';
@@ -285,6 +285,47 @@ export class TeamListRowDto implements TeamListRow {
     example: 1,
   })
   pendingInviteCount!: number;
+
+  @ApiProperty({ format: 'date-time', example: '2026-08-08T12:34:56.789Z' })
+  createdAt!: Date;
+}
+
+/**
+ * One row of GET /api/auth/managers (Owner-only). `implements ManagerListRow`
+ * for the same drift-protection as above. There is no password/passcode field —
+ * `pendingInvite` is the only account-state signal, derived from
+ * `password_hash IS NULL`; the hash never leaves the database.
+ */
+export class ManagerListRowDto implements ManagerListRow {
+  @ApiProperty({ format: 'uuid', example: UUID_EXAMPLE })
+  id!: string;
+
+  @ApiProperty({ example: 'Morgan Manager' })
+  name!: string;
+
+  @ApiProperty({ format: 'email', example: 'morgan@acme.test' })
+  email!: string;
+
+  @ApiProperty({ enum: ['active', 'inactive'], example: 'active' })
+  status!: 'active' | 'inactive';
+
+  @ApiProperty({
+    description: 'Provisioned but not yet activated — no password set.',
+    example: false,
+  })
+  pendingInvite!: boolean;
+
+  @ApiProperty({
+    type: String,
+    format: 'uuid',
+    nullable: true,
+    description: "The manager's active team, or null if they have not created one.",
+    example: null,
+  })
+  teamId!: string | null;
+
+  @ApiProperty({ type: String, nullable: true, example: null })
+  teamName!: string | null;
 
   @ApiProperty({ format: 'date-time', example: '2026-08-08T12:34:56.789Z' })
   createdAt!: Date;

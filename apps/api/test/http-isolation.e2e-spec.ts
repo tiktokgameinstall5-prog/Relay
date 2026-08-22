@@ -394,6 +394,112 @@ describe('§11 HTTP isolation gate', () => {
     });
   });
 
+  // --- GET /api/auth/managers — owner-only; an org-wide view no manager may hold ---
+  describe('GET /api/auth/managers — Owner-only; scoped to the org', () => {
+    const ids = (body: unknown) =>
+      (body as Array<{ id: string }>).map((m) => m.id).sort();
+
+    it('an Owner sees every manager in their org — not members, not the owner, not another org', async () => {
+      const res = await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.managerA.id, fx.managerB.id].sort());
+      // Spelled-out negatives: the list is managers only, org-scoped.
+      expect(ids(res.body)).not.toContain(fx.owner1.id);
+      expect(ids(res.body)).not.toContain(fx.memberA1.id);
+      expect(ids(res.body)).not.toContain(fx.managerC.id);
+    });
+
+    it('owner2 sees only their own org\'s manager (mirror)', async () => {
+      const res = await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.owner2))
+        .expect(200);
+      expect(ids(res.body)).toEqual([fx.managerC.id]);
+      expect(ids(res.body)).not.toContain(fx.managerA.id);
+      expect(ids(res.body)).not.toContain(fx.managerB.id);
+    });
+
+    it('a Manager is refused (403) — not handed a broken one-row list', async () => {
+      // A manager's "user" slice is {self} ∪ {their members}; filtered to
+      // role='manager' that is just themselves. Owner-only turns that misleading
+      // success into a clean refusal.
+      await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.managerA))
+        .expect(403);
+    });
+
+    it('a Member is refused (403)', async () => {
+      await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(403);
+    });
+
+    it('a forged role=owner claim on a Manager\'s token is still refused (403) [gate]', async () => {
+      // RolesGuard reads request.user.role, rebuilt from managerA's row ('manager');
+      // the forged 'owner' claim buys nothing.
+      const token = forgedToken({
+        sub: fx.managerA.id,
+        role: 'owner',
+        orgId: fx.org1Id,
+        managerId: fx.managerA.id,
+      });
+      await http
+        .get('/api/auth/managers')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('each row is EXACTLY the whitelist — no hash, no passcode', async () => {
+      const res = await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      const rows = res.body as Array<Record<string, unknown>>;
+      expect(rows.length).toBeGreaterThan(0);
+      for (const row of rows) {
+        expect(Object.keys(row).sort()).toEqual([
+          'createdAt',
+          'email',
+          'id',
+          'name',
+          'pendingInvite',
+          'status',
+          'teamId',
+          'teamName',
+        ]);
+      }
+    });
+
+    it('pendingInvite reflects activation state and the team is resolved', async () => {
+      // Fixture managers are activated (password set) and each holds a team.
+      const res = await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      const activated = (
+        res.body as Array<{ id: string; pendingInvite: boolean; teamId: string | null }>
+      ).find((m) => m.id === fx.managerA.id);
+      expect(activated?.pendingInvite).toBe(false);
+      expect(activated?.teamId).toBe(fx.teamAId);
+
+      // A freshly-provisioned manager has no password and no team yet.
+      const pendingId = await provisionManager(fx.owner1);
+      const res2 = await http
+        .get('/api/auth/managers')
+        .set('Authorization', bearer(fx.owner1))
+        .expect(200);
+      const pending = (
+        res2.body as Array<{ id: string; pendingInvite: boolean; teamId: string | null }>
+      ).find((m) => m.id === pendingId);
+      expect(pending?.pendingInvite).toBe(true);
+      expect(pending?.teamId).toBeNull();
+    });
+  });
+
   // --- POST /api/auth/managers — Owner-only role gate ---
   describe('POST /api/auth/managers — Owner-only', () => {
     it('an Owner provisions a manager (201, positive control)', async () => {
