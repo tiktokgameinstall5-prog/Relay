@@ -198,10 +198,17 @@ team/tasks/reports by ID — must fail (empty result or 403).
 
 - Use least-privilege permissions. Never run with `--dangerously-skip-permissions`. Keep
   deny rules in `.claude/settings.json` for `.env`/secrets and outbound network calls.
-- Any change touching authentication, authorization, or the tenant-isolation logic requires
-  human review before merge — do not treat AI review as sufficient for these areas.
-- Run `/security-review` after finishing each module, especially Auth and Workflow Engine.
-  Treat it as a first pass, not a full audit.
+- **Sensitive areas** = authentication, authorization, RLS/tenant isolation, and
+  session/token handling. Any change touching these requires the Owner's explicit human
+  review before merge — do not treat AI review as sufficient — AND a `/security-review`
+  pass (treat it as a first pass, not a full audit). This gate is non-negotiable and
+  applies even mid-phase.
+- **Everything else** — UI screens, styling, non-sensitive CRUD (task content, comments,
+  rankings *display*), bug fixes, refactors — ships autonomously: skip `/security-review`
+  and skip the human-review ask, commit once the normal test suite passes (which always
+  includes the §11 isolation test), and move straight to the next task. Batch several
+  non-sensitive tasks together before reporting back rather than stopping after each one.
+  If a change is ambiguous between the two buckets, treat it as sensitive.
 - Use **Plan Mode** before implementing any new module — propose the plan, get it approved,
   then implement.
 - Prefer many small, tested, committed steps over one large change.
