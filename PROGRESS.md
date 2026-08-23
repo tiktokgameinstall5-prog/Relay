@@ -258,10 +258,38 @@ the marketing Landing or the login screen before the restore resolves.
   one `ExceptionsHandler` line in the e2e log is the expected `ProbeController.publicTx` negative
   assertion (db.tx() on a @Public() route must throw), not a failure.
 
+**Re-verified live this session (independent reproduction, after the branch rename):** re-ran the
+full signup → F5 flow end-to-end against the running dev servers and read the raw network log to
+confirm it — not carried over from the prior session's notes:
+- **Stays signed in on refresh.** Fresh owner signup (`POST /api/auth/owner/signup` → 201) landed
+  on `/overview`; a full page reload **stayed on /overview** with the dashboard rendered. The
+  reload's bootstrap `POST /api/auth/session/refresh` returned **200** (then `/api/me` 200) — which
+  is exactly why the session survived the F5.
+- **StrictMode single-fire, proven by contrast.** On the reload, `performance.getEntriesByType`
+  showed `session/refresh` = **1** call while the non-memoised `teams`/`managers` GETs = **2** each.
+  StrictMode is demonstrably double-invoking; only the memoised bootstrap resists it.
+- **Token nowhere JS-readable.** `localStorage` and `sessionStorage` both empty; `document.cookie`
+  was the empty string (the `relay_rt` cookie rides the request but is HttpOnly, so invisible to
+  script).
+- **Console-error triage (so they aren't mistaken for defects later).** Three console errors during
+  the run are all benign and OFF the tested path: (1) a one-off `502` on an early bootstrap
+  (transient Vite-proxy→Nest blip, never recurred; API error log clean); (2) two `401`s — bootstrap
+  refresh with **no cookie**, which MUST 401 (the anti-oracle uniform 401 is how "anonymous" is
+  detected) and correctly routes to anon; (3) one `net::ERR_ABORTED` on the logout POST — the server
+  returned 204 but the immediate navigation aborted the response, and `signOut` is best-effort by
+  design. The signup → reload path itself was 100% 2xx.
+
 **Still outstanding / flagged:**
 - **§12 human review before merge** — `6b8bcca` touches auth and `89aeb9f` touches session
   handling; AI review + this manual verification is a first pass, not a substitute. Nothing merged
   to main.
+- **Two observations for the §12 reviewer (from this session's review — low risk, not blockers):**
+  (a) a theoretical race on the *pre-auth* screen — a slow no-cookie bootstrap refresh resolving
+  *after* a user's `completeSignIn` could clobber `authed`→`anon`; it is NOT present in the reload
+  path, and the no-cookie 401 is the fastest call so it resolves first in practice. (b)
+  `bootstrapSession` treats ANY refresh failure (incl. a transient 502 / network blip, not just a
+  401) as anon, so a flaky network on reload could cause a spurious logout — it fails *closed* (safe
+  direction), but a retry on transient non-401 failures would harden it.
 - **/security-review** on the auth module (tasks #4–#9) is STILL not run — and now also needs to
   cover the cookie transport.
 - **Cross-origin deployment caveat (new, for the reviewer):** the web `request()` helper relies on
@@ -271,8 +299,9 @@ the marketing Landing or the login screen before the restore resolves.
   deployment would need `credentials:'include'` + `SameSite=None; Secure` + CORS
   `Access-Control-Allow-Credentials`. Consistent with the vite proxy's stated same-origin design;
   recorded so it isn't discovered in production.
-- **Left in the dev DB** by the browser test: a real org `Restore Test Co` (owner
-  `restore-check-20260823@relay.test`).
+- **Left in the dev DB** by browser tests: orgs `Restore Test Co` (owner
+  `restore-check-20260823@relay.test`) and `Restore Verify Co` (owner
+  `restore-verify-20260823b@relay.test`).
 
 ### 2026-08-21 (web) — feat/web-auth-client rebased onto merged main + API-surface reconciliation
 
