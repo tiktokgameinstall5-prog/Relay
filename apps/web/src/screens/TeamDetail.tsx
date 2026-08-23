@@ -21,9 +21,8 @@ import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
 import { Avatar } from '../components/Avatar';
 import { StatTile } from '../components/StatTile';
-import { StatusChip } from '../components/StatusChip';
+import { MemberRoster } from '../components/MemberRoster';
 import { Panel } from '../components/Panel';
-import { fmtDateTime } from '../lib/format';
 
 export function TeamDetail() {
   // The route is /teams/:teamId, so teamId is always present; the default only
@@ -86,36 +85,10 @@ function TeamBody({ team, members }: { team: TeamListRow; members: MemberRow[] }
           </p>
         </Panel>
       ) : (
-        <div className="border-hairline overflow-hidden rounded-xl border bg-white">
-          {members.map((member) => (
-            <div
-              key={member.id}
-              className="border-hairline flex items-center gap-3 border-b px-4 py-3 last:border-0"
-            >
-              <Avatar name={member.name} size={32} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{member.name}</div>
-                <div className="text-faint truncate text-xs">{member.email}</div>
-              </div>
-              <div className="text-faint hidden font-mono text-[11px] sm:block">
-                joined {fmtDateTime(member.createdAt)}
-              </div>
-              <MemberChip member={member} />
-            </div>
-          ))}
-        </div>
+        <MemberRoster members={members} />
       )}
     </>
   );
-}
-
-/** Invite/account state as a chip: pending invite → amber, deactivated → grey,
- *  otherwise active → blue. (StatusChip reuses `pending` for a pending invite —
- *  see its divergence note.) */
-function MemberChip({ member }: { member: MemberRow }) {
-  if (member.pendingInvite) return <StatusChip status="pending" />;
-  if (member.status === 'inactive') return <StatusChip status="inactive" />;
-  return <StatusChip status="active" />;
 }
 
 function NotFound() {

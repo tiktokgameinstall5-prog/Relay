@@ -82,6 +82,25 @@ export interface ManagerProvisioned {
 }
 
 /**
+ * POST /api/auth/members. The member-provisioning twin of ManagerProvisioned,
+ * plus the team they joined. The passcode is deliberately absent for the same
+ * reason: the API never returns it — it exists only in the invite email.
+ */
+export interface MemberProvisioned {
+  id: string;
+  name: string;
+  email: string;
+  role: 'member';
+  status: 'active';
+  /** The manager's active team the member landed on. */
+  teamId: string;
+  /** ISO 8601 — serialised from a Date over the wire. */
+  passcodeExpiresAt: string;
+  /** false means the account was still created; the passcode is regenerable. */
+  inviteEmailSent: boolean;
+}
+
+/**
  * One row of GET /api/auth/teams (Owner sees all; Manager sees only their own,
  * scoped server-side by RLS). Mirrors TeamListRowDto.
  *
@@ -101,6 +120,18 @@ export interface TeamListRow {
   pendingInviteCount: number;
   /** ISO 8601 — serialised from a Date over the wire. */
   createdAt: string;
+}
+
+/**
+ * POST /api/auth/teams — the row just created. A team is not a credential, so
+ * this is the whole safe view: no secret, no passcode. The manager screen uses
+ * it only to confirm the create succeeded, then re-reads the team list.
+ */
+export interface TeamCreated {
+  id: string;
+  name: string;
+  managerId: string;
+  status: 'active';
 }
 
 /**

@@ -15,8 +15,10 @@ import type {
   AuthResult,
   ManagerListRow,
   ManagerProvisioned,
+  MemberProvisioned,
   MemberRow,
   MeResponse,
+  TeamCreated,
   TeamListRow,
 } from './types';
 
@@ -56,6 +58,30 @@ export function createManager(input: {
   email: string;
 }): Promise<ManagerProvisioned> {
   return request<ManagerProvisioned>('/auth/managers', { method: 'POST', body: input });
+}
+
+/**
+ * POST /api/auth/teams — 201. A Manager creates their OWN team: the server takes
+ * the owning manager from the caller and rejects any other id, so no managerId is
+ * sent from here. (An Owner-created team names a managerId, but that screen does
+ * not exist yet — this function stays as narrow as the one screen behind it.)
+ * 409 if the manager already has an active team.
+ */
+export function createTeam(input: { name: string }): Promise<TeamCreated> {
+  return request<TeamCreated>('/auth/teams', { method: 'POST', body: input });
+}
+
+/**
+ * POST /api/auth/members — 201. A Manager adds a member to their own team; the
+ * team is resolved from the caller server-side. Name + email only — roleTitle and
+ * the workflow-step number (§1) are a later screen. Passcode goes to the invite
+ * email, never returned. 409 if the email already exists in the org.
+ */
+export function createMember(input: {
+  name: string;
+  email: string;
+}): Promise<MemberProvisioned> {
+  return request<MemberProvisioned>('/auth/members', { method: 'POST', body: input });
 }
 
 /**

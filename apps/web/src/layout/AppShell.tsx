@@ -51,8 +51,8 @@ const NAV: Record<UserRole, NavItem[]> = {
     { to: '/reports', label: 'Reports', icon: MessageSquare },
   ],
   manager: [
-    { to: '/tasks', label: 'Task board', icon: ClipboardList },
     { to: '/team', label: 'My team', icon: Users },
+    { to: '/tasks', label: 'Task board', icon: ClipboardList },
     { to: '/rankings', label: 'Rankings', icon: Trophy },
     { to: '/reports', label: 'Reports', icon: MessageSquare },
   ],

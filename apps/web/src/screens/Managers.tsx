@@ -18,7 +18,7 @@
  * creation; the standing row afterwards is the plain directory entry.
  */
 import { useState, type FormEvent } from 'react';
-import { Crown, MailCheck, MailWarning, Terminal } from 'lucide-react';
+import { Crown } from 'lucide-react';
 import { createManager, listManagers } from '../api/auth';
 import { ApiError } from '../api/client';
 import type { ManagerListRow, ManagerProvisioned } from '../api/types';
@@ -28,6 +28,7 @@ import { Avatar } from '../components/Avatar';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Alert } from '../components/Alert';
+import { InviteResult } from '../components/InviteResult';
 import { ModalShell } from '../components/ModalShell';
 import { StatusChip } from '../components/StatusChip';
 import { fmtDateTime } from '../lib/format';
@@ -52,36 +53,11 @@ export function Managers() {
 
       {lastCreated !== null && (
         <div className="mb-4">
-          <Alert tone={lastCreated.inviteEmailSent ? 'success' : 'error'}>
-            <div className="flex items-start gap-2">
-              {lastCreated.inviteEmailSent ? (
-                <MailCheck size={16} className="mt-0.5 shrink-0" />
-              ) : (
-                <MailWarning size={16} className="mt-0.5 shrink-0" />
-              )}
-              <div>
-                <strong>{lastCreated.name}</strong> was created.{' '}
-                {lastCreated.inviteEmailSent
-                  ? 'The invite email was sent.'
-                  : 'The invite email FAILED to send — the account exists and the passcode can be reissued.'}
-                <div className="mt-1">
-                  Passcode expires <strong>{fmtDateTime(lastCreated.passcodeExpiresAt)}</strong>.
-                </div>
-                {/*
-                  Not a UI limitation: POST /api/auth/managers has no passcode
-                  field at all (api-response.dto.ts:102-104). The plaintext
-                  exists in exactly one place — the invite email.
-                */}
-                <div className="mt-1 flex items-start gap-1.5 text-[12px]">
-                  <Terminal size={13} className="mt-0.5 shrink-0" />
-                  <span>
-                    The passcode is never returned by the API. In development the console
-                    mail driver prints the whole email to the API log — read it there.
-                  </span>
-                </div>
-              </div>
-            </div>
-          </Alert>
+          <InviteResult
+            name={lastCreated.name}
+            inviteEmailSent={lastCreated.inviteEmailSent}
+            passcodeExpiresAt={lastCreated.passcodeExpiresAt}
+          />
         </div>
       )}
 

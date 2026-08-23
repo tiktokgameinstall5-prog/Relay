@@ -20,6 +20,7 @@ import { Managers } from './screens/Managers';
 import { Overview } from './screens/Overview';
 import { Teams } from './screens/Teams';
 import { TeamDetail } from './screens/TeamDetail';
+import { MyTeam } from './screens/MyTeam';
 import { Phase2Stub } from './screens/Phase2Stub';
 import type { UserRole } from './api/types';
 
@@ -109,11 +110,9 @@ export function App() {
             <Route
               path="/team"
               element={
-                <Phase2Stub
-                  title="My team"
-                  what="Your team's members, their role titles, and their workflow step numbers."
-                  task="a later task — task #7 shipped provisioning members, but no endpoint to read a team back yet"
-                />
+                <RequireRole role="manager">
+                  <MyTeam />
+                </RequireRole>
               }
             />
             <Route
