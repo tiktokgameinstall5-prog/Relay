@@ -30,11 +30,12 @@ export interface AuthUser {
 export interface AuthResult {
   accessToken: string;
   /**
-   * Opaque refresh token (task #8). Returned in the body, deliberately not as a
-   * cookie — see api-response.dto.ts:51-60. This client does not persist or use
-   * it yet: only the access token is kept, in memory (api/client.ts), so a page
-   * refresh still signs you out. Wiring POST /api/auth/refresh to restore the
-   * session on load is a deferred, security-sensitive step, not done here.
+   * Opaque refresh token (task #8), returned in the body for the cookie-less
+   * mobile client (§6). The server ALSO sets it as the HttpOnly relay_rt cookie
+   * on this response, and the web client relies on that cookie — not this body
+   * value — to restore the session via POST /api/auth/session/refresh on load
+   * (see AuthContext). So this field is intentionally dropped by the web client;
+   * the access token is all it keeps, in memory (api/client.ts).
    */
   refreshToken: string;
   user: AuthUser;

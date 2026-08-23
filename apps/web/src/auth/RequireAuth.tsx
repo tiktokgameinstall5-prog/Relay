@@ -9,10 +9,18 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import type { ReactNode } from 'react';
 import { useAuth } from './AuthContext';
+import { BootSplash } from '../components/BootSplash';
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { status } = useAuth();
   const location = useLocation();
+
+  if (status === 'loading') {
+    // The mount-time session restore is still in flight. Show the neutral boot
+    // splash rather than redirecting, so a user with a valid relay_rt cookie is
+    // not bounced to /login before their session resolves.
+    return <BootSplash />;
+  }
 
   if (status === 'anon') {
     // `from` lets /login send the user back where they were aiming. It is only

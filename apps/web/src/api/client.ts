@@ -9,18 +9,19 @@
  * module-scoped binding is not reachable from an XSS payload without already
  * having code execution inside this module's closure.
  *
- * The cost is real and deliberate: a page refresh drops the token, so the user
- * is signed out. Refresh-token rotation now exists server-side (task #8: POST
- * /api/auth/refresh returns a fresh pair, the refresh token in the body — not a
- * cookie). Wiring this client to persist that refresh token and restore the
- * session on load is a deferred step with its own storage decision, and is NOT
- * done here — so the refresh-signs-you-out trade still stands. When it is wired,
- * do NOT "fix" it by moving the ACCESS token into storage; that trades a visible
+ * The cost would be that a page refresh drops the token — so the session is
+ * restored on load from the HttpOnly relay_rt cookie instead (task #8 rotation +
+ * the cookie transport): AuthContext calls refreshSession() on mount, the browser
+ * sends the cookie its own JS cannot read, and a fresh access token comes back in
+ * the body. The ACCESS token still never leaves this module-scoped variable; do
+ * NOT "fix" anything by moving it into storage, which would trade a visible
  * inconvenience for an invisible vulnerability.
  *
  * Keeping it out of React state also means it is never a prop, never in a
  * dependency array, and never serialised into a devtools snapshot.
  */
+
+import type { AuthResult } from './types';
 
 let accessToken: string | null = null;
 
@@ -153,4 +154,40 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 
   return parsed as T;
+}
+
+/**
+ * POST /api/auth/session/refresh — restore a session from the HttpOnly relay_rt
+ * cookie. The body is empty by design: the browser cannot read its own HttpOnly
+ * cookie to place the token in the body, so the server reads it from the cookie
+ * (mobile sends it in the body instead — one API, §6). The cookie rides along on
+ * this same-origin request automatically (the Vite dev proxy makes /api
+ * same-origin, and the cookie's Path=/api/auth/session covers this route), so no
+ * `credentials` option is needed. authenticated:false so a stale in-memory bearer
+ * never rides along.
+ *
+ * Resolves with the rotated AuthResult (200); throws ApiError(401) when there is
+ * no valid cookie. The server sets the rotated refresh token back as a fresh
+ * cookie — the body copy is ignored by this client.
+ */
+export function refreshSession(): Promise<AuthResult> {
+  return request<AuthResult>('/auth/session/refresh', {
+    method: 'POST',
+    body: {},
+    authenticated: false,
+  });
+}
+
+/**
+ * POST /api/auth/session/logout — 204. Revokes the refresh-token family and
+ * clears the relay_rt cookie server-side (a browser cannot clear an HttpOnly
+ * cookie itself). Empty body: the server reads the token from the cookie.
+ * Idempotent — a missing or already-revoked cookie still returns 204.
+ */
+export function logoutSession(): Promise<void> {
+  return request<void>('/auth/session/logout', {
+    method: 'POST',
+    body: {},
+    authenticated: false,
+  });
 }

@@ -167,20 +167,6 @@ export function AppShell() {
           ))}
         </div>
 
-        {/*
-          The in-memory-token trade, stated rather than sprung on anyone. The
-          token is held only in a JS variable so an XSS payload cannot read it
-          out of storage; the price is that a refresh ends the session. Task #8
-          (refresh rotation) shipped server-side and can remove this price
-          without giving up the property — once this client wires it, which it
-          does not yet.
-        */}
-        <div className="border-b border-[#F2D9A8] bg-[#FEF6E7] px-4 py-1.5 text-[11px] text-[#7A5B18]">
-          Session is held in memory — refreshing this page signs you out. Persistent
-          sessions land once this client wires refresh tokens (server-side ready since
-          task&nbsp;#8).
-        </div>
-
         <main className="min-w-0 flex-1 p-4 md:p-6">
           <Outlet />
         </main>

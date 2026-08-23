@@ -12,6 +12,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext';
 import { RequireAuth } from './auth/RequireAuth';
 import { RequireRole } from './auth/RequireRole';
 import { AppShell } from './layout/AppShell';
+import { BootSplash } from './components/BootSplash';
 import { Landing } from './screens/landing/Landing';
 import { Signup } from './screens/Signup';
 import { Login } from './screens/Login';
@@ -42,6 +43,11 @@ function homeFor(role: UserRole): string {
  *  "/", not a redirect to /login); signed-in → their role's dashboard. */
 function RootGate() {
   const { status, user } = useAuth();
+  if (status === 'loading') {
+    // Session restore in flight: don't flash the marketing Landing to a user who
+    // is about to be redirected to their dashboard (nor the reverse).
+    return <BootSplash />;
+  }
   if (status === 'authed' && user !== null) {
     return <Navigate to={homeFor(user.role)} replace />;
   }
