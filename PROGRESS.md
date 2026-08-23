@@ -10,6 +10,18 @@ throttle), and the two-layer §11 isolation gate (DB + HTTP, 59 tests) all done 
 Remaining before Phase 1 is fully closed: human review of the auth module (§12) and a
 `/security-review` pass — both outstanding for tasks #4–#9. Phase 2 (Workflow Engine) is next.)
 
+**Web client (separate track — branch `feat/admin-dashboard-ui`, 12 commits, NOT merged):**
+the read-side admin dashboards (owner Overview / Teams / TeamDetail / Managers, manager `/team`)
+over the Phase 1 list endpoints, the public landing page, the RelayChain/StatTile primitives, and
+**HttpOnly-cookie session restore-on-load** are done. The earlier in-memory-token "refresh signs
+you out" trade and security-review finding **F4** (refresh token in the body, not a cookie) are
+both **closed** — see the 2026-08-23 log. The access token remains **in-memory only**; only the
+refresh token gained an HttpOnly cookie. Branch ships its own §11 gate tests: `test:isolation` 88,
+`test:e2e` 240 (all green). Still pending for this branch too: §12 human review + `/security-review`,
+now including the cookie transport. Branch **renamed** from `feat/phase2-admin-dashboards` this
+session so it isn't confused with CLAUDE.md's Phase 2 (Workflow Engine): this branch is
+Phase-1-data UI, NOT the Workflow Engine, which is still unstarted.
+
 ## Phase checklist
 
 - [ ] Phase 1 — Auth & Tenancy
@@ -167,6 +179,100 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-23 (web) — feat/admin-dashboard-ui (renamed from feat/phase2-admin-dashboards): read-side admin dashboards + HttpOnly-cookie session restore (F4 closed, restore-on-load no longer deferred)
+
+Branch `feat/admin-dashboard-ui` — **12 commits off main** (merge-base `68883e7`), **not
+merged**. **Renamed this session** from `feat/phase2-admin-dashboards`, whose name collided with
+CLAUDE.md's Phase 2 (Workflow Engine); this branch is **web admin-dashboard UI over Phase 1 read
+endpoints, plus the session-transport hardening**, and does NOT touch the Workflow Engine
+(task_step chain, forward/complete, live holder), which is still unstarted. (Note the count: this
+is 12 commits, not the "5 + 1" it's easy to remember — the read-side API work and the cookie commit
+are on this branch too, not on main.) Grouped:
+
+**API — read-side list endpoints, each shipping its own §11 gate (4 commits):**
+- `aa30d32` GET /api/auth/teams + org counts
+- `5adf568` GET /api/auth/managers (owner-only)
+- `31e4eb6` GET /api/auth/teams/:id/members (@OwnedResource) + gate-header rewrite
+- `6b8bcca` **the HttpOnly refresh cookie** on login/signup/first-login/refresh/logout (see below)
+
+**Web — landing, primitives, dashboards (7 commits):**
+- `ec244c8` design tokens + format helpers + StatusChip divergence note
+- `053db9f` RelayChain + StatTile primitives + landing relay demo data
+- `abe37fc` public landing page at "/" + RootGate
+- `c8df1cb` list-read client fns + row types (teams/managers/members)
+- `7d2c5ef` owner Overview + Teams + TeamDetail (real list-reads)
+- `0da1269` Managers screen → real GET /api/auth/managers
+- `8c610d5` manager /team screen — create team, add members, shared roster
+
+**Web — session restore (1 commit, THIS session):**
+- `89aeb9f` restore session on load from the HttpOnly relay_rt cookie
+
+**Headline status change: restore-on-load is DONE, and security-review finding F4 is CLOSED.**
+The 2026-08-21 (web) entry recorded the in-memory access token with a "refresh signs you out"
+trade and restore-on-load explicitly **deferred**; the 2026-08-21 security-review recorded **F4**
+(refresh token returned in the JSON body, not an HttpOnly cookie) as a conscious pre-ship
+decision. Both are now resolved and those earlier notes are superseded (not edited — they remain
+the record of what was true then):
+- `6b8bcca` adds `auth/cookie.ts`: the rotated refresh token is ALSO set as `relay_rt` —
+  HttpOnly, Secure, SameSite=Lax, Path=/api/auth/session (the tightest scope covering only the
+  two routes that read it, refresh + logout). The body copy stays for the cookie-less Flutter
+  client (§6): one API, two transports. `POST /api/auth/session/{refresh,logout}` read the token
+  from the body (mobile) OR the cookie (browser), and always re-set / clear the cookie.
+- `89aeb9f` wires the browser half: on mount AuthContext calls `refreshSession()`; the browser
+  sends the HttpOnly cookie its own JS cannot read, and a fresh access token comes back in the
+  body. A page refresh no longer signs you out.
+
+**The in-memory-token rule is UNCHANGED and still load-bearing.** The access token still lives
+ONLY in the module-scoped `let` in `api/client.ts` — never storage, never React state, never a
+JS-readable cookie. Only the long-lived refresh token gained a store (the HttpOnly cookie), which
+is precisely a store page JS cannot read. Do NOT "fix" anything by moving the ACCESS token into
+storage.
+
+**StrictMode is why the restore is memoised at module scope.** `POST /api/auth/session/refresh`
+ROTATES the refresh token, so it is NOT idempotent — presenting the same cookie twice trips
+reuse-detection and burns the whole family (logging the user out). React StrictMode double-invokes
+mount effects in dev, and the usual "ignore the late response" guard suppresses the second
+*response* but still FIRES the second *request*. So `bootstrapSession()` memoises the in-flight
+promise in a module-scope variable (which survives StrictMode's mount/unmount/mount because the
+module itself is not re-evaluated) → exactly one refresh per page load. A neutral `BootSplash` is
+shown by RootGate + RequireAuth during `status==='loading'` so a valid-cookie user never flashes
+the marketing Landing or the login screen before the restore resolves.
+
+**Verified this session:**
+- **Static review** of the restore diff (AuthContext, client.ts, types.ts, RequireAuth, App,
+  AppShell, new BootSplash) — StrictMode memoisation correct; access token confirmed in-memory
+  only; backend routes + cookie path (`/api/auth/session`) cross-checked against the frontend
+  `/auth/session/*` calls; `secure:true` verified fine on http://localhost (secure-context
+  exception); Vite proxy makes `/api` same-origin so the cookie rides along with no `credentials`
+  option.
+- **Browser E2E** (dev servers up, Vite proxy): signup → reload **stayed on /overview** with the
+  owner dashboard rendered (not bounced to Landing/login). Post-reload `POST /session/refresh`
+  fired **exactly once → 200**, while the non-memoised screen GETs (/teams, /managers) each fired
+  **twice** under StrictMode — the single-vs-double contrast is the live proof the memoisation
+  works (a double-fire would have burned the family). `localStorage`/`sessionStorage` empty;
+  `document.cookie` has no `relay_rt` (HttpOnly).
+- **Web gate:** `tsc --noEmit` clean; `vite build` clean (1826 modules).
+- **API gate (re-run on the branch):** `test:isolation` **88/88** (2 suites; was 64 on main — the
+  three list-read commits added +24 gate tests), `test:e2e` **240/240** (10 suites; was 210). The
+  one `ExceptionsHandler` line in the e2e log is the expected `ProbeController.publicTx` negative
+  assertion (db.tx() on a @Public() route must throw), not a failure.
+
+**Still outstanding / flagged:**
+- **§12 human review before merge** — `6b8bcca` touches auth and `89aeb9f` touches session
+  handling; AI review + this manual verification is a first pass, not a substitute. Nothing merged
+  to main.
+- **/security-review** on the auth module (tasks #4–#9) is STILL not run — and now also needs to
+  cover the cookie transport.
+- **Cross-origin deployment caveat (new, for the reviewer):** the web `request()` helper relies on
+  fetch's default `same-origin` credentials mode. Correct for dev (Vite proxy) and any same-origin
+  prod (reverse-proxy `/api`), but if the SPA and API are ever served from DIFFERENT origins the
+  browser will neither store the Set-Cookie (login/signup) nor send it (session/refresh) — that
+  deployment would need `credentials:'include'` + `SameSite=None; Secure` + CORS
+  `Access-Control-Allow-Credentials`. Consistent with the vite proxy's stated same-origin design;
+  recorded so it isn't discovered in production.
+- **Left in the dev DB** by the browser test: a real org `Restore Test Co` (owner
+  `restore-check-20260823@relay.test`).
 
 ### 2026-08-21 (web) — feat/web-auth-client rebased onto merged main + API-surface reconciliation
 
