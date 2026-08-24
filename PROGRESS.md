@@ -10,17 +10,22 @@ throttle), and the two-layer §11 isolation gate (DB + HTTP, 59 tests) all done 
 Remaining before Phase 1 is fully closed: human review of the auth module (§12) and a
 `/security-review` pass — both outstanding for tasks #4–#9. Phase 2 (Workflow Engine) is next.)
 
-**Web client (separate track — branch `feat/admin-dashboard-ui`, 12 commits, NOT merged):**
-the read-side admin dashboards (owner Overview / Teams / TeamDetail / Managers, manager `/team`)
-over the Phase 1 list endpoints, the public landing page, the RelayChain/StatTile primitives, and
-**HttpOnly-cookie session restore-on-load** are done. The earlier in-memory-token "refresh signs
-you out" trade and security-review finding **F4** (refresh token in the body, not a cookie) are
-both **closed** — see the 2026-08-23 log. The access token remains **in-memory only**; only the
-refresh token gained an HttpOnly cookie. Branch ships its own §11 gate tests: `test:isolation` 88,
-`test:e2e` 240 (all green). Still pending for this branch too: §12 human review + `/security-review`,
-now including the cookie transport. Branch **renamed** from `feat/phase2-admin-dashboards` this
-session so it isn't confused with CLAUDE.md's Phase 2 (Workflow Engine): this branch is
-Phase-1-data UI, NOT the Workflow Engine, which is still unstarted.
+**Web client — MERGED into `main` (2026-08-24).** Branch `feat/admin-dashboard-ui` (formerly
+`feat/phase2-admin-dashboards`) fast-forwarded into `main`; both refs now point at `5537eb3`. It
+delivered the read-side admin dashboards (owner Overview / Teams / TeamDetail / Managers, manager
+`/team`) over the Phase 1 list endpoints, the public landing page, the RelayChain/StatTile
+primitives, and **HttpOnly-cookie session restore-on-load**. The earlier in-memory-token "refresh
+signs you out" trade and security-review finding **F4** (refresh token in the body, not a cookie)
+are both **closed** — see the 2026-08-23 log. The access token remains **in-memory only**; only the
+refresh token gained an HttpOnly cookie. **§12 gate satisfied for THIS merge:** the two
+auth/session-touching commits on the branch — `6b8bcca` (the HttpOnly `relay_rt` cookie) and
+`89aeb9f` (browser restore-on-load) — got a `/security-review` pass (clean, no findings) AND the
+Owner's explicit human review + approval before the merge (2026-08-24 log). Post-merge on main:
+`test:isolation` **88/88** (re-run and verified today), `test:e2e` **240/240** (carried from the
+branch verification — fast-forward merge, identical tree, only docs-only CLAUDE.md commits on top).
+This branch is Phase-1-data UI, NOT the Workflow Engine (Phase 2), which is still unstarted. Still
+open (unchanged, separate from this merge): the broader §12 human review + full `/security-review`
+of the original Phase 1 auth module (tasks #4–#9).
 
 ## Phase checklist
 
@@ -179,6 +184,69 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-08-24 — Workflow-policy edits, security-review + Owner-approved merge of the web branch into main, §9 mobile-nav verification
+
+**Two CLAUDE.md workflow-policy commits (docs-only, both on main):**
+- `ef94240` — scoped the §12 review gate: **sensitive** = authentication, authorization,
+  RLS/tenant isolation, session/token handling → still require the Owner's explicit human review
+  **and** a `/security-review` pass before merge (AI review is NOT sufficient; ambiguous ⇒
+  sensitive). **Everything else** (UI, styling, non-sensitive CRUD, bug fixes, refactors) ships
+  autonomously once the normal suite (incl. the §11 isolation test) passes — no human-review ask,
+  batch several before reporting.
+- `5537eb3` — **Speed defaults (non-sensitive work only):** default to Sonnet (escalate to Opus
+  only for auth/authz/isolation/session-critical work), terse output, skip redundant exploration,
+  batch, never ask approval except for genuine security/auth/isolation risk. Explicitly does NOT
+  relax the §12 sensitive gate or the §11 isolation test. `.claude/settings.local.json` now sets
+  `"model": "sonnet"` (verified persisted this session).
+
+**`/security-review` of the two auth/session-touching web-branch commits — CLEAN, no findings.**
+Ran the review methodology manually over `6b8bcca` (the HttpOnly `relay_rt` refresh cookie on
+login/signup/first-login/refresh/logout) and `89aeb9f` (browser session restore-on-load); the
+builtin skill's `origin/HEAD...` diff can't run (no remote). Confirmed: cookie is
+HttpOnly+Secure+SameSite=Lax+Path=/api/auth/session (tightest scope, only the two routes that read
+it); CSRF closed (Lax blocks the cross-site POST cookie, routes are POST-only, state-changing calls
+use Bearer, no CORS grant to read the rotated response); anti-oracle preserved (absent token → `''`
+→ uniform 401, never 500); logout idempotent 204 and always clears the cookie; refresh DTO
+`@IsOptional` allows the browser's empty body while `@IsNotEmpty` + `MaxLength(512)` reject
+empty/garbage; rotation + reuse-detection unchanged; access token stays module-scoped (never
+storage/state/JS-readable cookie); StrictMode single-refresh via module-scope memoization;
+BootSplash prevents a valid-cookie user flashing Landing/login. **One pre-existing note (NOT a
+blocker, not introduced here):** the refresh token is still also present in the JSON response body
+on the browser (the §6 one-API/two-transport trade for the cookie-less Flutter client), so an XSS
+intercepting the in-flight fetch could read it there — mitigated by rotation + reuse-detection.
+
+**Owner-approved, then merged.** The Owner gave explicit human review + approval of `6b8bcca` and
+`89aeb9f` (the §12 sensitive gate — the one place pausing is still correct). Fast-forwarded
+`feat/admin-dashboard-ui` into `main`; both refs now at `5537eb3`, working tree clean.
+
+**Post-merge test counts on main.** Re-ran the §11 gate on main today: `test:isolation` **88/88**
+(2 suites, rls + http-isolation) — verified, not inferred. `test:e2e` **240/240** carried from the
+2026-08-23 branch verification: the merge is a fast-forward (identical tree) and the only commits
+added on top are docs-only CLAUDE.md edits, so no backend code moved — the count cannot have
+changed. Did not re-run the full e2e (redundant given the FF + docs-only delta; speed directive).
+
+**§9 mobile-nav check — PASS, no code change needed.** CLAUDE.md §9 calls the vanishing-sidebar
+below `md` out by name ("resize to ~390px and confirm every nav tab is still reachable").
+`AppShell.tsx` already implements it correctly: desktop `<aside>` is `hidden … md:flex`; below `md`
+a `md:hidden` horizontal `overflow-x-auto` tab bar renders every nav item with `shrink-0`. Verified
+live in the browser at 390px on the owner layout (widest, 5 tabs): `aside` computed `display:none`;
+all 5 tabs present (Overview, Managers, All teams, All tasks, Reports); tab bar scrollable
+(`scrollW 537 > clientW 390`); no tab zero-width/clipped; last tab "Reports" fully in view after
+scroll. Data proof via `preview_eval`/`preview_inspect` (more reliable than a screenshot for this);
+the optional screenshot couldn't be captured because the Browser pane isn't displayed (compositing
+paused) — not a code defect. `/overview` also spot-checked: clean stat tiles + a proper "No teams
+yet" empty state with CTA. No polish defect found; did not churn freshly-merged main speculatively.
+
+**Follow-up worth a future session (flagged, not done):** §9 says "keep the test for it," but there
+is still **no automated test** for mobile-nav reachability — it's manually re-verified each time.
+`apps/web` has no test runner yet; standing one up (vitest + jsdom + testing-library) is its own
+task, not "small polish," and touches build config — recorded here rather than done unprompted.
+
+**Left in the dev DB** by the §9 browser check: org `Nav Check Co` (owner
+`navcheck-1787555603383@relay.test`).
+
+
 
 ### 2026-08-23 (web) — feat/admin-dashboard-ui (renamed from feat/phase2-admin-dashboards): read-side admin dashboards + HttpOnly-cookie session restore (F4 closed, restore-on-load no longer deferred)
 
