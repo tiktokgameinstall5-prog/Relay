@@ -212,6 +212,14 @@ team/tasks/reports by ID — must fail (empty result or 403).
 - Use **Plan Mode** before implementing any new module — propose the plan, get it approved,
   then implement.
 - Prefer many small, tested, committed steps over one large change.
+- **Speed defaults (non-sensitive work only).** Model: run on **Sonnet**; escalate to Opus
+  only for genuinely auth/authz/isolation/session-critical code. Output: terse — do the
+  work, skip verbose diagnostics and step-by-step reasoning. Exploration: skip "read 10
+  files first" passes when context already suffices (accept slightly more risk on
+  non-sensitive code). Batching: chain as many non-sensitive tasks as possible in one
+  session; don't stop to report between small tasks. Approval: never ask for review/approval
+  except on genuine security/auth/isolation risks. None of this relaxes the §12 sensitive
+  gate or the §11 isolation test — those keep full rigor.
 
 ## 13. Session & Context Management
 
