@@ -185,6 +185,24 @@ guard = "may you address this row at all", the writing statement = "may you do *
 
 <!-- Add one entry per session, most recent on top -->
 
+### 2026-08-24 (web tests) — apps/web test runner stood up (Vitest + Testing Library + jsdom); §9 mobile-nav regression test added
+
+Closes the follow-up flagged in the entry below ("no automated test for mobile-nav reachability … standing one up is its own task"). **Non-sensitive** — test tooling + one presentational nav element; touches no auth/authz/isolation/session code, so it ships autonomously (§12). Committed on `main`.
+
+**Test runner.** `apps/web` had no runner (the API side uses Jest; the user asked for Vitest here). Added dev-deps: `vitest ^4.1.11`, `jsdom ^30`, `@testing-library/react ^16.3.2`, `@testing-library/dom ^10`, `@testing-library/user-event ^14`, `@testing-library/jest-dom ^7`. Config lives in `vite.config.ts` (`defineConfig` switched to import from `vitest/config`): `environment:'jsdom'`, `globals:false` (explicit imports), `setupFiles:['./src/test/setup.ts']`, `css:false`, `include:['src/**/*.{test,spec}.{ts,tsx}']`. Setup file registers `@testing-library/jest-dom/vitest` matchers and an `afterEach(cleanup)` (auto-cleanup does not self-register with globals off). Scripts: `test`/`test:watch` in `apps/web`, and a root `test:web` for parity with `test`/`test:e2e`/`test:isolation`.
+
+**Windows gotcha — pool.** The default `forks` pool timed out waiting for the worker to hand-shake ("Failed to start forks worker … Timeout waiting for worker to respond", 60s) in this npm-workspace on Windows. Set `pool:'threads'` — worker threads start reliably. Note this if the API side ever moves to Vitest.
+
+**§9 mobile-nav test — `src/layout/AppShell.test.tsx` (5 tests, green).** Mocks `useAuth` (the context itself isn't exported and its provider does a network bootstrap on mount), renders `AppShell` in a `MemoryRouter` with a layout route + one panel route per known path. Asserts the **mobile tab bar** carries a reachable link for every nav item of every role (owner 5 / manager 4 / member 3), that both navs coexist in the DOM (the §9 fix is that the mobile bar is an *addition*, not a replacement), and walks every owner tab via `userEvent.click` proving each navigates (incl. the last tab, "Reports", the one the manual 390px check confirms is reachable after scroll). Inputs use `userEvent`, never raw `el.value=` (see the signup non-bug note below).
+
+**Two source hooks in `AppShell.tsx` (the only app change):** `data-testid="sidebar-nav"` on the desktop `<nav>` and `data-testid="mobile-nav"` on the mobile tab bar — **essential**, because both navs render the same links (responsive CSS hides one) and an unscoped query would pass off the desktop copy even if the mobile bar were deleted, i.e. it would miss the exact §9 regression. Also upgraded the mobile tab bar from `<div>` → `<nav aria-label="Primary">` (small a11y win: it's now a landmark; block→flex layout unchanged, zero visual diff).
+
+**What this test does NOT prove (documented in its header).** jsdom applies no CSS, runs no media query, and doesn't compile Tailwind — so `md:hidden`/`hidden … md:flex` are inert strings here. The test is a **structural** guard (the mobile nav exists and carries every item, reachable); the **visual** "which nav shows at 390px" behaviour stays the manual browser check recorded in the entry below. The two are complementary, not redundant.
+
+**Signup "empty form" investigation (earlier this session) — NOT a bug, no code change.** A browser-tool form fill (`preview_fill` / programmatic `input.value=`) submits Relay's React forms with an **empty** body: the form passes native validation and POSTs, but every field is `''` (server 400). Root cause is React's per-input value *tracker* — `el.value=` updates the tracker so the subsequent `input` event reads as "no change" and `onChange` never fires. Real keystrokes go through native machinery the tracker registers, so users are unaffected; `@testing-library`'s `userEvent`/`fireEvent.change` use the native setter, so the new test is unaffected too. Recorded in memory (`preview-fill-empty-react-forms`); `Signup.tsx`/`Field.tsx` are correct and untouched.
+
+**Verified:** `npm --workspace apps/web run test` **5/5**, `typecheck` (`tsc --noEmit`, which covers the test file since it's under `src`) clean, `build` clean (1826 modules). API gate unaffected (no backend file touched).
+
 ### 2026-08-24 — Workflow-policy edits, security-review + Owner-approved merge of the web branch into main, §9 mobile-nav verification
 
 **Two CLAUDE.md workflow-policy commits (docs-only, both on main):**

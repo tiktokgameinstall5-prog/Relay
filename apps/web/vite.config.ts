@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite';
+/// <reference types="vitest/config" />
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -20,5 +21,19 @@ export default defineConfig({
         changeOrigin: false,
       },
     },
+  },
+  // Vitest — jsdom, because these are component tests (setup in src/test/setup.ts).
+  // css:false because jsdom applies no styles anyway: skip the Tailwind pipeline
+  // so a stray stylesheet import can never slow a unit test. What jsdom can and
+  // cannot prove about the responsive nav is spelled out in AppShell.test.tsx.
+  test: {
+    environment: 'jsdom',
+    globals: false,
+    setupFiles: ['./src/test/setup.ts'],
+    css: false,
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Windows + npm workspace: the default `forks` pool times out waiting for
+    // the child worker to hand-shake. Worker threads start reliably here.
+    pool: 'threads',
   },
 });

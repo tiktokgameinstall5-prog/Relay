@@ -16,6 +16,7 @@
     "db:migrate": "npm --workspace apps/api run db:migrate",
     "test": "npm --workspace apps/api run test",
     "test:e2e": "npm --workspace apps/api run test:e2e",
-    "test:isolation": "npm --workspace apps/api run test:isolation"
+    "test:isolation": "npm --workspace apps/api run test:isolation",
+    "test:web": "npm --workspace apps/web run test"
   }
 }

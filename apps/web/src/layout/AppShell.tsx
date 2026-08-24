@@ -87,7 +87,11 @@ export function AppShell() {
           </div>
         </div>
 
-        <nav className="flex-1 space-y-0.5 px-3 py-4">
+        <nav
+          aria-label="Primary"
+          data-testid="sidebar-nav"
+          className="flex-1 space-y-0.5 px-3 py-4"
+        >
           {nav.map((item) => (
             <NavLink
               key={item.to}
@@ -151,7 +155,11 @@ export function AppShell() {
             <LogOut size={16} />
           </button>
         </div>
-        <div className="border-hairline flex gap-2 overflow-x-auto border-b bg-white px-4 py-2 md:hidden">
+        <nav
+          aria-label="Primary"
+          data-testid="mobile-nav"
+          className="border-hairline flex gap-2 overflow-x-auto border-b bg-white px-4 py-2 md:hidden"
+        >
           {nav.map((item) => (
             <NavLink
               key={item.to}
@@ -165,7 +173,7 @@ export function AppShell() {
               <item.icon size={13} /> {item.label}
             </NavLink>
           ))}
-        </div>
+        </nav>
 
         <main className="min-w-0 flex-1 p-4 md:p-6">
           <Outlet />
