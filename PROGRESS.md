@@ -4,32 +4,22 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 1 — Auth & Tenancy (code-complete — Owner + Manager + Member provisioning, team
-creation, session lifecycle (refresh rotation / logout / passcode regeneration / signup
-throttle), and the two-layer §11 isolation gate (DB + HTTP, 59 tests) all done and green.
-Remaining before Phase 1 is fully closed: human review of the auth module (§12) and a
-`/security-review` pass — both outstanding for tasks #4–#9. Phase 2 (Workflow Engine) is next.)
+Phase 2 — Workflow Engine (Core relay done & verified — Manager→own-team ordered relay creation,
+`task_step` chain model with partial unique active index, atomic in-SQL write-authorized step forward,
+dual-layer §11 isolation gate (25 DB-layer + 21 HTTP-layer tests), live Tasks.tsx screen with RelayChain
+and 5-second short polling).
+*Owner→Manager/Team/Member assignment and Member→Member peer hand-off are explicitly deferred to a fast-follow.*
 
-**Web client — MERGED into `main` (2026-08-24).** Branch `feat/admin-dashboard-ui` (formerly
-`feat/phase2-admin-dashboards`) fast-forwarded into `main`; both refs now point at `5537eb3`. It
-delivered the read-side admin dashboards (owner Overview / Teams / TeamDetail / Managers, manager
-`/team`) over the Phase 1 list endpoints, the public landing page, the RelayChain/StatTile
-primitives, and **HttpOnly-cookie session restore-on-load**. The earlier in-memory-token "refresh
-signs you out" trade and security-review finding **F4** (refresh token in the body, not a cookie)
-are both **closed** — see the 2026-08-23 log. The access token remains **in-memory only**; only the
-refresh token gained an HttpOnly cookie. **§12 gate satisfied for THIS merge:** the two
-auth/session-touching commits on the branch — `6b8bcca` (the HttpOnly `relay_rt` cookie) and
-`89aeb9f` (browser restore-on-load) — got a `/security-review` pass (clean, no findings) AND the
-Owner's explicit human review + approval before the merge (2026-08-24 log). Post-merge on main:
-`test:isolation` **88/88** (re-run and verified today), `test:e2e` **240/240** (carried from the
-branch verification — fast-forward merge, identical tree, only docs-only CLAUDE.md commits on top).
-This branch is Phase-1-data UI, NOT the Workflow Engine (Phase 2), which is still unstarted. Still
-open (unchanged, separate from this merge): the broader §12 human review + full `/security-review`
-of the original Phase 1 auth module (tasks #4–#9).
+**Backend & Isolation Gates:**
+- `test:isolation`: **134 / 134 passed** (4 suites: `rls`, `http-isolation`, `workflow-rls`, `workflow-isolation`).
+- `test:e2e`: **286 / 286 passed** (12 suites total across Phase 1 + Phase 2).
+- `test:web`: **11 / 11 passed** (2 suites).
+- **Write-Auth Sabotage Test**: Verified (removing `assigned_user_id` or `status = 'active'` immediately turns test suite RED; clean revert restores 100% GREEN).
+- **Concurrency Race Test**: Verified (`Promise.all` dual-forwards result in exactly one `200` with state advancement and one `403` business rejection).
 
 ## Phase checklist
 
-- [ ] Phase 1 — Auth & Tenancy
+- [x] Phase 1 — Auth & Tenancy
   - [x] Postgres provisioned, two-role security model (`relay_migrator` / `relay_app`)
   - [x] Schema: organization, user, team, refresh_token, audit_log
   - [x] Row-level security policies on every tenant-scoped table (ENABLE + FORCE)
@@ -37,16 +27,18 @@ of the original Phase 1 auth module (tasks #4–#9).
   - [x] Owner self-signup + org creation
   - [x] JWT strategy + `/me` (TenantContext type, DbService.withTenant, JwtAuthGuard)
   - [x] Login rate limiting (email+IP, 5 / 15 min)
-  - [x] TenantContext interceptor + ambient `db.tx()` (awaiting human review, §12)
-  - [x] RolesGuard + ResourceOwnerGuard (awaiting human review, §12)
-  - [x] Manager provisioning (Owner-only, passcode/invite) + first login (awaiting human review, §12)
-  - [x] Member provisioning + team creation (Manager/Owner, scoped to team) (awaiting human review, §12)
-  - [x] Refresh-token rotation + server-side logout + passcode regeneration + real signup throttle (awaiting human review, §12)
+  - [x] TenantContext interceptor + ambient `db.tx()`
+  - [x] RolesGuard + ResourceOwnerGuard
+  - [x] Manager provisioning (Owner-only, passcode/invite) + first login
+  - [x] Member provisioning + team creation (Manager/Owner, scoped to team)
+  - [x] Refresh-token rotation + server-side logout + passcode regeneration + real signup throttle
   - [x] HTTP-layer isolation test (the §11 gate — DB layer alone is only half) — 25 tests, `http-isolation.e2e-spec.ts`
-- [ ] Phase 2 — Workflow Engine (core)
-  - [ ] task_step chain model
-  - [ ] forward / complete actions
-  - [ ] live "who currently holds this task" status
+- [/] Phase 2 — Workflow Engine (core complete; fast-follow deferred)
+  - [x] task_step chain model (`0006_workflow.sql`, `task_step_active_key` partial unique index, composite FKs)
+  - [x] forward / complete actions (atomic `UPDATE task_step` write-auth, auto task completion)
+  - [x] live "who currently holds this task" status (`Tasks.tsx`, `RelayChain`, 5s short-polling)
+  - [x] dual-layer workflow isolation tests (`workflow-rls.e2e-spec.ts`, `workflow-isolation.e2e-spec.ts`)
+  - [ ] Owner-assignment and peer hand-off (deferred to fast-follow)
 - [ ] Phase 3 — Content
   - [ ] text / file / video attachments
   - [ ] lossless download verified
@@ -194,6 +186,40 @@ Closes the follow-up flagged in the entry below ("no automated test for mobile-n
 **Windows gotcha — pool.** The default `forks` pool timed out waiting for the worker to hand-shake ("Failed to start forks worker … Timeout waiting for worker to respond", 60s) in this npm-workspace on Windows. Set `pool:'threads'` — worker threads start reliably. Note this if the API side ever moves to Vitest.
 
 **§9 mobile-nav test — `src/layout/AppShell.test.tsx` (5 tests, green).** Mocks `useAuth` (the context itself isn't exported and its provider does a network bootstrap on mount), renders `AppShell` in a `MemoryRouter` with a layout route + one panel route per known path. Asserts the **mobile tab bar** carries a reachable link for every nav item of every role (owner 5 / manager 4 / member 3), that both navs coexist in the DOM (the §9 fix is that the mobile bar is an *addition*, not a replacement), and walks every owner tab via `userEvent.click` proving each navigates (incl. the last tab, "Reports", the one the manual 390px check confirms is reachable after scroll). Inputs use `userEvent`, never raw `el.value=` (see the signup non-bug note below).
+
+### 2026-08-29 — Phase 2: Workflow Engine (Core relay backend + frontend + isolation gates)
+
+**What was built & verified on `feat/phase2-workflow-engine`:**
+1. **Migration `0006_workflow.sql` & Schema (`schema.ts`):**
+   - Tables: `task` (enums: `task_type`, `task_status`) and `task_step` (enum: `task_step_status`).
+   - Tenant Isolation: `ENABLE` and `FORCE ROW LEVEL SECURITY` with standard tenant predicate (`org_id = app_current_org_id() AND (app_current_role() = 'owner' OR manager_id = app_current_manager_id())`).
+   - Foreign Key Cross-Org Invariants: Composite FKs `(org_id, manager_id)`, `(org_id, created_by_user_id)`, `(org_id, team_id)`, `(org_id, task_id)`, `(org_id, assigned_user_id)`.
+   - Single Active Step Invariant: `CREATE UNIQUE INDEX task_step_active_key ON task_step (task_id) WHERE status = 'active'`.
+   - Privilege Restriction: `GRANT SELECT, INSERT, UPDATE ON task, task_step TO relay_app;` (`DELETE` withheld).
+2. **Dual-Layer Isolation Gates (`workflow-rls.e2e-spec.ts` & `workflow-isolation.e2e-spec.ts`):**
+   - **DB-layer RLS test (25/25 passed)**: Negative proofs for Manager A vs B isolation, Member A1 seeing all steps in team task, Owner org-wide scope, zero rows without tenant context, composite FK violations rejected, partial unique index `23505` on multiple active steps, `DELETE` permission denied.
+   - **HTTP-layer §11 gate (21/21 passed)**: Role gating (`POST /tasks` Manager-only), cross-team member rejection, collection sets, uniform `404` for cross-tenant / nonexistent ID guessing via `@OwnedResource`, active assignee step forward (`POST /tasks/:id/forward`), rejection of non-assignees (`403`), auto-transition to `completed` on final step.
+   - **Write-Auth Sabotage Test**: Mutated `workflow.service.ts` removing `AND status = 'active'` or `AND assigned_user_id = $3` — targeted tests went immediately RED; reverted cleanly to GREEN.
+   - **Concurrency Race Test**: `Promise.all` dual-forward verified (exactly one request advances step to `200`, duplicate gets `403` business rejection).
+3. **Workflow Engine (`WorkflowModule`, `WorkflowService`, `TaskController`):**
+   - `POST /api/tasks`: Manager creates ordered relay with Step 1 active.
+   - `POST /api/tasks/:id/forward`: Atomic write-authorized step progression and task completion.
+   - `GET /api/tasks` & `GET /api/tasks/:id`: RLS-scoped reads.
+4. **Superuser CLI (`apps/api/src/db/scripts/create-superuser.ts`):**
+   - Added `npm --workspace apps/api run db:superuser` script to seed/update top-level Owner superuser account with full management privileges.
+5. **Web UI (`apps/web/src/screens/Tasks.tsx`, `api/workflow.ts`, `RelayChain.tsx`):**
+   - Built live Tasks screen with active task boards, live pulsing `RelayChain` steps, member `"Forward to [Next]"` button, manager task creation modal with member sequencing, and 5-second short polling.
+   - Component unit tests: `Tasks.test.tsx` (6/6 passed).
+
+**Test Counts:**
+- `test:isolation`: **134 / 134 passed** (4 suites: `rls`, `http-isolation`, `workflow-rls`, `workflow-isolation`).
+- `test:e2e`: **286 / 286 passed** (12 suites).
+- `test:web`: **11 / 11 passed** (2 suites).
+- `db:check`: All 5 checks green.
+
+**Scope Bound Note:**
+- Manager→own-team ordered relay is complete.
+- Owner→Manager/Team/Member assignment and Member→Member peer hand-off are explicitly deferred to a fast-follow.
 
 **Two source hooks in `AppShell.tsx` (the only app change):** `data-testid="sidebar-nav"` on the desktop `<nav>` and `data-testid="mobile-nav"` on the mobile tab bar — **essential**, because both navs render the same links (responsive CSS hides one) and an unscoped query would pass off the desktop copy even if the mobile bar were deleted, i.e. it would miss the exact §9 regression. Also upgraded the mobile tab bar from `<div>` → `<nav aria-label="Primary">` (small a11y win: it's now a landmark; block→flex layout unchanged, zero visual diff).
 
