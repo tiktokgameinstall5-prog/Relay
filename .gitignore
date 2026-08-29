@@ -36,5 +36,10 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
+# local storage & tmp
+.storage/
+*-tmp/
+
 # Claude Code local overrides
 .claude/settings.local.json
+

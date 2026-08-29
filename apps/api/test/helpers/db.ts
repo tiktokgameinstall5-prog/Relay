@@ -86,7 +86,7 @@ export async function withoutTenant<T>(fn: (c: PoolClient) => Promise<T>): Promi
 /** Wipe all tenant data. Migrator-only: relay_app has no TRUNCATE grant. */
 export async function truncateAll(): Promise<void> {
   await migratorPool.query(
-    'TRUNCATE organization, "user", team, refresh_token, audit_log CASCADE',
+    'TRUNCATE organization, "user", team, refresh_token, audit_log, task, task_step, task_attachment CASCADE',
   );
 }
 

@@ -13,24 +13,37 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   ChevronDown,
+  Download,
   FileText,
+  Film,
   Paperclip,
   Plus,
   Radio,
   Send,
   Shield,
+  Trash2,
+  UploadCloud,
   User,
   Users,
   Video,
   X,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
-import { createTask, forwardStep, listTasks } from '../api/workflow';
+import {
+  createTask,
+  deleteAttachment,
+  forwardStep,
+  getAttachmentDownloadUrl,
+  listAttachments,
+  listTasks,
+  uploadAttachment,
+} from '../api/workflow';
 import { listManagers, listTeamMembers, listTeams } from '../api/auth';
 import { ApiError } from '../api/client';
 import type {
   ManagerListRow,
   MemberRow,
+  TaskAttachment,
   TaskResponse,
   TaskType,
   TeamListRow,
@@ -127,6 +140,7 @@ export function Tasks() {
                     key={task.id}
                     task={task}
                     currentUserId={user?.id ?? ''}
+                    userRole={user?.role ?? 'member'}
                     onForwardSuccess={() => {
                       setActionError(null);
                       reload();
@@ -187,11 +201,13 @@ function EmptyTasksState({
 function TaskCard({
   task,
   currentUserId,
+  userRole,
   onForwardSuccess,
   onForwardError,
 }: {
   task: TaskResponse;
   currentUserId: string;
+  userRole: string;
   onForwardSuccess: () => void;
   onForwardError: (msg: string) => void;
 }) {
@@ -372,8 +388,195 @@ function TaskCard({
             )}
           </div>
         )}
+
+        {/* Content & Attachments Section */}
+        <TaskAttachmentsSection taskId={task.id} currentUserId={currentUserId} userRole={userRole} />
       </div>
     </Panel>
+  );
+}
+
+function fmtFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function TaskAttachmentsSection({
+  taskId,
+  currentUserId,
+  userRole,
+}: {
+  taskId: string;
+  currentUserId: string;
+  userRole: string;
+}) {
+  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (expanded) {
+      loadAttachments();
+    }
+  }, [expanded, taskId]);
+
+  async function loadAttachments() {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listAttachments(taskId);
+      setAttachments(data);
+    } catch {
+      setError('Failed to load attachments.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    setError(null);
+    try {
+      const created = await uploadAttachment(taskId, file);
+      setAttachments((prev) => [...prev, created]);
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setError(err.message);
+      } else {
+        setError('Failed to upload file.');
+      }
+    } finally {
+      setUploading(false);
+      e.target.value = '';
+    }
+  }
+
+  async function handleDelete(attachmentId: string) {
+    try {
+      await deleteAttachment(taskId, attachmentId);
+      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+    } catch {
+      setError('Failed to delete attachment.');
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-hairline/60 pt-3">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setExpanded((prev) => !prev)}
+          className="flex items-center gap-1.5 text-xs font-medium text-muted hover:text-ink"
+        >
+          <Paperclip size={13} />
+          <span>Attachments ({attachments.length})</span>
+          <ChevronDown
+            size={12}
+            className={`transition-transform ${expanded ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {expanded && (
+          <label className="cursor-pointer inline-flex items-center gap-1 text-xs font-semibold text-active hover:underline">
+            <UploadCloud size={13} />
+            <span>{uploading ? 'Uploading...' : 'Add attachment'}</span>
+            <input
+              type="file"
+              onChange={handleFileUpload}
+              disabled={uploading}
+              className="hidden"
+              aria-label="Upload attachment"
+            />
+          </label>
+        )}
+      </div>
+
+      {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          {loading ? (
+            <p className="text-xs text-faint">Loading attachments...</p>
+          ) : attachments.length === 0 ? (
+            <p className="text-xs text-faint">No attachments uploaded yet.</p>
+          ) : (
+            attachments.map((att) => {
+              const isVideo = att.mimeType.startsWith('video/');
+              const canDelete =
+                userRole === 'owner' ||
+                userRole === 'manager' ||
+                att.uploadedByUserId === currentUserId;
+
+              return (
+                <div
+                  key={att.id}
+                  className="rounded-lg border border-hairline bg-surface p-2.5 text-xs"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 truncate">
+                      {isVideo ? (
+                        <Film size={15} className="text-active shrink-0" />
+                      ) : (
+                        <FileText size={15} className="text-muted shrink-0" />
+                      )}
+                      <span className="font-medium text-ink truncate" title={att.fileName}>
+                        {att.fileName}
+                      </span>
+                      <span className="text-faint shrink-0 font-mono">
+                        ({fmtFileSize(att.fileSize)})
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <a
+                        href={getAttachmentDownloadUrl(taskId, att.id)}
+                        download={att.fileName}
+                        className="inline-flex items-center gap-1 font-medium text-active hover:underline"
+                        title="Download lossless original"
+                      >
+                        <Download size={12} />
+                        {isVideo ? 'Lossless Video' : 'Download'}
+                      </a>
+
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(att.id)}
+                          className="text-faint hover:text-red-600"
+                          title="Delete attachment"
+                          aria-label={`Delete ${att.fileName}`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {isVideo && (
+                    <div className="mt-2 overflow-hidden rounded bg-black/5">
+                      <video
+                        controls
+                        preload="metadata"
+                        src={getAttachmentDownloadUrl(taskId, att.id)}
+                        className="max-h-48 w-full rounded object-contain"
+                      >
+                        Your browser does not support the video element.
+                      </video>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

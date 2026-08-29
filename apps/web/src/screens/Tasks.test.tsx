@@ -19,6 +19,10 @@ vi.mock('../api/workflow', () => ({
   getTask: vi.fn(),
   createTask: vi.fn(),
   forwardStep: vi.fn(),
+  listAttachments: vi.fn(),
+  uploadAttachment: vi.fn(),
+  deleteAttachment: vi.fn(),
+  getAttachmentDownloadUrl: vi.fn((taskId: string, attId: string) => `/api/tasks/${taskId}/attachments/${attId}/download`),
 }));
 const mockedWorkflow = vi.mocked(workflowApi);
 
@@ -456,5 +460,123 @@ describe('Tasks Screen', () => {
       description: undefined,
       targetMemberId: 'u-member-1',
     });
+  });
+
+  it('lists attachments, renders video preview for video attachments, and shows lossless download link', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([mockTaskInProgress]);
+    mockedWorkflow.listAttachments.mockResolvedValue([
+      {
+        id: 'att-1',
+        taskId: 'task-1',
+        fileName: 'raw_master_clip.mp4',
+        fileSize: 10485760, // 10 MB
+        mimeType: 'video/mp4',
+        checksumSha256: 'abc123sha',
+        uploadedByUserId: 'm1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const toggleBtn = await screen.findByRole('button', { name: /attachments/i });
+    await user.click(toggleBtn);
+
+    expect(await screen.findByText('raw_master_clip.mp4')).toBeInTheDocument();
+    expect(screen.getByText('(10.0 MB)')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /lossless video/i })).toHaveAttribute(
+      'href',
+      '/api/tasks/task-1/attachments/att-1/download',
+    );
+  });
+
+  it('allows user to upload an attachment to a task', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([mockTaskInProgress]);
+    mockedWorkflow.listAttachments.mockResolvedValue([]);
+    mockedWorkflow.uploadAttachment.mockResolvedValue({
+      id: 'att-2',
+      taskId: 'task-1',
+      fileName: 'specs.pdf',
+      fileSize: 2048,
+      mimeType: 'application/pdf',
+      checksumSha256: 'def456sha',
+      uploadedByUserId: 'm1',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const toggleBtn = await screen.findByRole('button', { name: /attachments/i });
+    await user.click(toggleBtn);
+
+    const fileInput = screen.getByLabelText(/upload attachment/i);
+    const testFile = new File(['dummy content'], 'specs.pdf', { type: 'application/pdf' });
+    await user.upload(fileInput, testFile);
+
+    expect(mockedWorkflow.uploadAttachment).toHaveBeenCalledWith('task-1', testFile);
+    expect(await screen.findByText('specs.pdf')).toBeInTheDocument();
+  });
+
+  it('allows user to delete an attachment from a task', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([mockTaskInProgress]);
+    mockedWorkflow.listAttachments.mockResolvedValue([
+      {
+        id: 'att-1',
+        taskId: 'task-1',
+        fileName: 'temp.txt',
+        fileSize: 100,
+        mimeType: 'text/plain',
+        checksumSha256: 'xyz',
+        uploadedByUserId: 'm1',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      },
+    ]);
+    mockedWorkflow.deleteAttachment.mockResolvedValue();
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const toggleBtn = await screen.findByRole('button', { name: /attachments/i });
+    await user.click(toggleBtn);
+
+    const deleteBtn = await screen.findByRole('button', { name: /delete temp\.txt/i });
+    await user.click(deleteBtn);
+
+    expect(mockedWorkflow.deleteAttachment).toHaveBeenCalledWith('task-1', 'att-1');
   });
 });

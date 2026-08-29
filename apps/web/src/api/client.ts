@@ -100,7 +100,7 @@ function messageFor(status: number, body: NestErrorBody | null): {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST';
+  method?: 'GET' | 'POST' | 'DELETE';
   body?: unknown;
   /**
    * Send the bearer token. Defaults to true — the public routes pass false so a
@@ -113,7 +113,10 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const { method = 'GET', body, authenticated = true } = options;
 
   const headers: Record<string, string> = { Accept: 'application/json' };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
   if (authenticated && accessToken !== null) {
     headers['Authorization'] = `Bearer ${accessToken}`;
   }
@@ -123,7 +126,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     response = await fetch(`/api${path}`, {
       method,
       headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      ...(body !== undefined ? { body: isFormData ? body : JSON.stringify(body) } : {}),
     });
   } catch {
     // fetch only rejects on a transport failure, so this is genuinely "the API

@@ -32,8 +32,8 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // Windows + npm workspace: single-worker execution starts reliably.
-    pool: 'forks',
+    // Windows + npm workspace: thread pool starts reliably and quickly.
+    pool: 'threads',
     fileParallelism: false,
   },
 });

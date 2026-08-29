@@ -24,3 +24,31 @@ export function forwardStep(taskId: string, input?: ForwardStepInput): Promise<T
   return request<TaskResponse>(`/tasks/${taskId}/forward`, { method: 'POST', body: input });
 }
 
+/** GET /api/tasks/:id/attachments — list attachments for a task */
+export function listAttachments(taskId: string): Promise<import('./types').TaskAttachment[]> {
+  return request<import('./types').TaskAttachment[]>(`/tasks/${taskId}/attachments`);
+}
+
+/** POST /api/tasks/:id/attachments — upload a file or master video to a task */
+export function uploadAttachment(taskId: string, file: File): Promise<import('./types').TaskAttachment> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<import('./types').TaskAttachment>(`/tasks/${taskId}/attachments`, {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+/** DELETE /api/tasks/:taskId/attachments/:attachmentId — delete an attachment */
+export function deleteAttachment(taskId: string, attachmentId: string): Promise<void> {
+  return request<void>(`/tasks/${taskId}/attachments/${attachmentId}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Get direct download URL for an attachment */
+export function getAttachmentDownloadUrl(taskId: string, attachmentId: string): string {
+  return `/api/tasks/${taskId}/attachments/${attachmentId}/download`;
+}
+
+

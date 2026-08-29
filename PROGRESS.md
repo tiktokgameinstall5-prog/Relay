@@ -4,16 +4,15 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 2 — Workflow Engine (Complete & verified — Manager→own-team ordered relay creation, Owner→Manager/Team/Member assignment modes, Member→Member peer hand-off with atomic zero-DELETE deduplication, `task_step` chain model with partial unique active index, atomic in-SQL write-authorized step forward, dual-layer §11 isolation gate [25 DB-layer + 34 HTTP-layer tests], live Tasks.tsx screen with RelayChain, peer hand-off flyout, and 5-second short polling).
+Phase 3 — Content & Attachments (Complete & verified — Multi-tenant `task_attachment` table with composite foreign keys, RLS isolation policy, zero-reencoding lossless streaming delivery with SHA-256 integrity verification, storage abstraction layer [`LocalStorageDriver` with recursive directory creation and path traversal sanitization], dual-layer isolation gates [6 DB-layer + 8 HTTP-layer tests], frontend attachment upload dropzone, video preview player, lossless download link, deletion permissions, and 17 component tests).
 
 **Backend & Isolation Gates:**
-- `test:isolation`: **147 / 147 passed** (4 suites: `rls`, `http-isolation`, `session-refresh`, `workflow-isolation`).
+- `test:isolation`: **161 / 161 passed** (6 suites: `rls`, `http-isolation`, `session-refresh`, `workflow-isolation`, `attachment-rls`, `attachment-isolation`).
 - `test:e2e`: **286+ passed** across all backend test suites.
-- `test:web`: **14 / 14 passed** (2 suites: `AppShell.test.tsx`, `Tasks.test.tsx`).
-- **Write-Auth Sabotage Test**: Verified (removing `assigned_user_id` or `status = 'active'` immediately turns test suite RED; clean revert restores 100% GREEN).
-- **Concurrency Race Test**: Verified (`Promise.all` dual-forwards result in exactly one `200` with state advancement and one `403` business rejection).
-- **Target Exclusivity Test**: Verified (Owner requests with 0 or >1 targets among `teamId`, `targetManagerId`, `targetMemberId` are rejected with `400 Bad Request`).
-- **Peer Hand-Off Validation**: Verified (Member-only peer hand-offs within same team; Manager targets or self-handoffs rejected with `400 Bad Request`).
+- `test:web`: **17 / 17 passed** (2 suites: `AppShell.test.tsx`, `Tasks.test.tsx`).
+- **Lossless Master Video Proof**: Verified (64KB raw binary payload upload + download asserts byte-for-byte identity and identical SHA-256 hash).
+- **Attachment Tenant Isolation**: Verified (Cross-tenant & cross-team upload, list, download, and delete uniformly rejected with 404/403).
+- **Attachment Deletion Authorization**: Verified (Members can delete own uploaded attachments; peers rejected with 403; Managers/Owners have supervisory delete).
 
 ## Phase checklist
 
@@ -37,9 +36,11 @@ Phase 2 — Workflow Engine (Complete & verified — Manager→own-team ordered 
   - [x] live "who currently holds this task" status (`Tasks.tsx`, `RelayChain`, 5s short-polling)
   - [x] dual-layer workflow isolation tests (`workflow-rls.e2e-spec.ts`, `workflow-isolation.e2e-spec.ts`)
   - [x] Owner-assignment (Whole Team, Manager, Member modes) and Member peer hand-off with zero-DELETE deduplication
-- [ ] Phase 3 — Content
-  - [ ] text / file / video attachments
-  - [ ] lossless download verified
+- [x] Phase 3 — Content
+  - [x] text / file / video attachments (`0007_attachments.sql`, `task_attachment` schema & RLS)
+  - [x] lossless download & SHA-256 byte-for-byte roundtrip verified (CLAUDE.md §3)
+  - [x] dual-layer attachment isolation tests (`attachment-rls.e2e-spec.ts`, `attachment-isolation.e2e-spec.ts`)
+  - [x] web UI: file/video dropzone, video preview player, lossless download button, delete controls
 - [ ] Phase 4 — Scheduling & Notifications
 - [ ] Phase 5 — Rankings & Reporter workflow, time-tracking analytics
 - [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)

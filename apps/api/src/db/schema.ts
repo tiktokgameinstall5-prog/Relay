@@ -251,6 +251,42 @@ export const taskStep = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// task_attachment — file/video attachments on a task (Phase 3)
+// ---------------------------------------------------------------------------
+export const taskAttachment = pgTable(
+  'task_attachment',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'restrict' }),
+    managerId: uuid('manager_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => task.id, { onDelete: 'cascade' }),
+    uploadedByUserId: uuid('uploaded_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    fileName: text('file_name').notNull(),
+    fileSize: text('file_size').notNull(), // text/bigint representation
+    mimeType: text('mime_type').notNull(),
+    storageKey: text('storage_key').notNull(),
+    checksumSha256: text('checksum_sha256').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_attachment_org_id_idx').on(t.orgId),
+    index('task_attachment_manager_id_idx').on(t.managerId),
+    index('task_attachment_task_id_idx').on(t.taskId),
+    index('task_attachment_uploaded_by_user_id_idx').on(t.uploadedByUserId),
+    uniqueIndex('task_attachment_org_id_id_key').on(t.orgId, t.id),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Inferred types
 // ---------------------------------------------------------------------------
 export type Organization = typeof organization.$inferSelect;
@@ -267,6 +303,8 @@ export type Task = typeof task.$inferSelect;
 export type NewTask = typeof task.$inferInsert;
 export type TaskStep = typeof taskStep.$inferSelect;
 export type NewTaskStep = typeof taskStep.$inferInsert;
+export type TaskAttachment = typeof taskAttachment.$inferSelect;
+export type NewTaskAttachment = typeof taskAttachment.$inferInsert;
 
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
@@ -274,4 +312,5 @@ export type TeamStatus = (typeof teamStatusEnum.enumValues)[number];
 export type TaskType = (typeof taskTypeEnum.enumValues)[number];
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type TaskStepStatus = (typeof taskStepStatusEnum.enumValues)[number];
+
 
