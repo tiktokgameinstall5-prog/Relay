@@ -36,6 +36,9 @@ import {
 export const userRoleEnum = pgEnum('user_role', ['owner', 'manager', 'member']);
 export const userStatusEnum = pgEnum('user_status', ['active', 'inactive']);
 export const teamStatusEnum = pgEnum('team_status', ['active', 'deleted']);
+export const taskTypeEnum = pgEnum('task_type', ['text', 'video', 'file']);
+export const taskStatusEnum = pgEnum('task_status', ['scheduled', 'in_progress', 'completed']);
+export const taskStepStatusEnum = pgEnum('task_step_status', ['pending', 'active', 'completed']);
 
 // ---------------------------------------------------------------------------
 // organization — the top-level tenant
@@ -179,6 +182,75 @@ export const auditLog = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// task — the parent workflow unit (Phase 2)
+// ---------------------------------------------------------------------------
+export const task = pgTable(
+  'task',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'restrict' }),
+    managerId: uuid('manager_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    teamId: uuid('team_id').references(() => team.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    type: taskTypeEnum('type').notNull(),
+    description: text('description'),
+    createdByUserId: uuid('created_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
+    status: taskStatusEnum('status').notNull().default('in_progress'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_org_id_idx').on(t.orgId),
+    index('task_manager_id_idx').on(t.managerId),
+    index('task_team_id_idx').on(t.teamId),
+    index('task_status_idx').on(t.status),
+    uniqueIndex('task_org_id_id_key').on(t.orgId, t.id),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// task_step — one step in the ordered relay chain (Phase 2)
+// ---------------------------------------------------------------------------
+export const taskStep = pgTable(
+  'task_step',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'restrict' }),
+    managerId: uuid('manager_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => task.id, { onDelete: 'cascade' }),
+    assignedUserId: uuid('assigned_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    stepOrder: integer('step_order').notNull(),
+    status: taskStepStatusEnum('status').notNull().default('pending'),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('task_step_task_id_idx').on(t.taskId),
+    index('task_step_assigned_user_id_idx').on(t.assignedUserId),
+    index('task_step_manager_id_idx').on(t.managerId),
+    uniqueIndex('task_step_task_id_step_order_key').on(t.taskId, t.stepOrder),
+    uniqueIndex('task_step_org_id_id_key').on(t.orgId, t.id),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Inferred types
 // ---------------------------------------------------------------------------
 export type Organization = typeof organization.$inferSelect;
@@ -191,7 +263,15 @@ export type RefreshToken = typeof refreshToken.$inferSelect;
 export type NewRefreshToken = typeof refreshToken.$inferInsert;
 export type AuditLog = typeof auditLog.$inferSelect;
 export type NewAuditLog = typeof auditLog.$inferInsert;
+export type Task = typeof task.$inferSelect;
+export type NewTask = typeof task.$inferInsert;
+export type TaskStep = typeof taskStep.$inferSelect;
+export type NewTaskStep = typeof taskStep.$inferInsert;
 
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
 export type TeamStatus = (typeof teamStatusEnum.enumValues)[number];
+export type TaskType = (typeof taskTypeEnum.enumValues)[number];
+export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
+export type TaskStepStatus = (typeof taskStepStatusEnum.enumValues)[number];
+
