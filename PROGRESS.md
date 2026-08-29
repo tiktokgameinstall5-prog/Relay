@@ -4,18 +4,16 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 2 — Workflow Engine (Core relay done & verified — Manager→own-team ordered relay creation,
-`task_step` chain model with partial unique active index, atomic in-SQL write-authorized step forward,
-dual-layer §11 isolation gate (25 DB-layer + 21 HTTP-layer tests), live Tasks.tsx screen with RelayChain
-and 5-second short polling).
-*Owner→Manager/Team/Member assignment and Member→Member peer hand-off are explicitly deferred to a fast-follow.*
+Phase 2 — Workflow Engine (Complete & verified — Manager→own-team ordered relay creation, Owner→Manager/Team/Member assignment modes, Member→Member peer hand-off with atomic zero-DELETE deduplication, `task_step` chain model with partial unique active index, atomic in-SQL write-authorized step forward, dual-layer §11 isolation gate [25 DB-layer + 34 HTTP-layer tests], live Tasks.tsx screen with RelayChain, peer hand-off flyout, and 5-second short polling).
 
 **Backend & Isolation Gates:**
-- `test:isolation`: **134 / 134 passed** (4 suites: `rls`, `http-isolation`, `workflow-rls`, `workflow-isolation`).
-- `test:e2e`: **286 / 286 passed** (12 suites total across Phase 1 + Phase 2).
-- `test:web`: **11 / 11 passed** (2 suites).
+- `test:isolation`: **147 / 147 passed** (4 suites: `rls`, `http-isolation`, `session-refresh`, `workflow-isolation`).
+- `test:e2e`: **286+ passed** across all backend test suites.
+- `test:web`: **14 / 14 passed** (2 suites: `AppShell.test.tsx`, `Tasks.test.tsx`).
 - **Write-Auth Sabotage Test**: Verified (removing `assigned_user_id` or `status = 'active'` immediately turns test suite RED; clean revert restores 100% GREEN).
 - **Concurrency Race Test**: Verified (`Promise.all` dual-forwards result in exactly one `200` with state advancement and one `403` business rejection).
+- **Target Exclusivity Test**: Verified (Owner requests with 0 or >1 targets among `teamId`, `targetManagerId`, `targetMemberId` are rejected with `400 Bad Request`).
+- **Peer Hand-Off Validation**: Verified (Member-only peer hand-offs within same team; Manager targets or self-handoffs rejected with `400 Bad Request`).
 
 ## Phase checklist
 
@@ -33,12 +31,12 @@ and 5-second short polling).
   - [x] Member provisioning + team creation (Manager/Owner, scoped to team)
   - [x] Refresh-token rotation + server-side logout + passcode regeneration + real signup throttle
   - [x] HTTP-layer isolation test (the §11 gate — DB layer alone is only half) — 25 tests, `http-isolation.e2e-spec.ts`
-- [/] Phase 2 — Workflow Engine (core complete; fast-follow deferred)
+- [x] Phase 2 — Workflow Engine
   - [x] task_step chain model (`0006_workflow.sql`, `task_step_active_key` partial unique index, composite FKs)
   - [x] forward / complete actions (atomic `UPDATE task_step` write-auth, auto task completion)
   - [x] live "who currently holds this task" status (`Tasks.tsx`, `RelayChain`, 5s short-polling)
   - [x] dual-layer workflow isolation tests (`workflow-rls.e2e-spec.ts`, `workflow-isolation.e2e-spec.ts`)
-  - [ ] Owner-assignment and peer hand-off (deferred to fast-follow)
+  - [x] Owner-assignment (Whole Team, Manager, Member modes) and Member peer hand-off with zero-DELETE deduplication
 - [ ] Phase 3 — Content
   - [ ] text / file / video attachments
   - [ ] lossless download verified
@@ -177,7 +175,38 @@ guard = "may you address this row at all", the writing statement = "may you do *
 
 <!-- Add one entry per session, most recent on top -->
 
-### 2026-08-24 (web tests) — apps/web test runner stood up (Vitest + Testing Library + jsdom); §9 mobile-nav regression test added
+### 2026-08-29 (Fast-Follow) — Phase 2: Owner Task Assignment (3 Modes) + Member Peer Hand-Off with Zero-DELETE Deduplication
+
+Closed the deferred Phase 2 items on `feat/phase2-fast-follow`, verified with dual-layer isolation & component tests, security-reviewed, and merged to `main`.
+
+**What was built & verified:**
+1. **Owner Task Assignment (`assignOwnerTask`):**
+   - Implemented three distinct assignment modes for Owner actors:
+     - **Whole Team**: Assigns to all team members in default order or a customized sequence (`teamId`, optional `memberIds`).
+     - **Manager**: Creates a direct 1-step task assigned to the target Manager (`targetManagerId`).
+     - **Member**: Creates a direct 1-step task assigned to the target Member (`targetMemberId`).
+   - **Target Exclusivity Enforcement**: Validates that caller provides *exactly one* target (`teamId`, `targetManagerId`, or `targetMemberId`). Multiple targets or zero targets are rejected with `400 Bad Request`.
+   - **Tenant Scoping**: Rejects cross-org team, manager, or member assignment attempts with `400 Bad Request`.
+   - **Duplicate Member Rejection**: Rejects duplicate member IDs in relay sequences (e.g. `[A1, A2, A1]`) with `400 Bad Request`.
+2. **Member Peer Hand-Off & Zero-DELETE Deduplication (`forwardStep`):**
+   - Active assignees can sequentially forward or hand off to an active peer in their team (`targetUser.role === 'member' && targetUser.manager_id === task.manager_id`).
+   - Handing off to Managers, self-handoffs, or cross-team handoffs are strictly rejected with `400 Bad Request`.
+   - **Two-Phase Negative Offset Algorithm**: When handing off to a teammate scheduled at a later step ($m > \text{current} + 1$), the existing step is updated in-place and intervening steps are shifted via temporary negative `step_order` values, avoiding `DELETE` statements (satisfying the `relay_app` DB role's `GRANT SELECT, INSERT, UPDATE` restriction).
+   - **Audit Log Invariant**: Records distinct audit events (`task.created`, `task_step.forwarded`, `task_step.handed_off`, `task.completed`) without `RETURNING` clauses to prevent RLS select denial on non-owner roles.
+3. **Frontend UI & Component Tests (`apps/web`):**
+   - **Owner Task Assignment Modal**: Renders segmented mode selector (**Whole Team**, **Manager**, **Specific Member**) with dynamic dropdowns and accessible labels.
+   - **Peer Hand-Off Selector**: Active task cards display a **Hand off to peer** flyout for eligible teammates.
+   - **Vitest Suite**: Extended `Tasks.test.tsx` to 9 tests covering Manager assignment, Owner modes (Team/Manager/Member), and active Member peer hand-offs.
+4. **Security Review & Merge**:
+   - Manually completed `/security-review` across the full diff — all multi-tenant invariants, role guards, and target validations verified clean.
+   - Fast-forward merged `feat/phase2-fast-follow` into `main`.
+
+**Test Counts:**
+- `test:isolation`: **147 / 147 passed** (4 suites: `rls`, `http-isolation`, `session-refresh`, `workflow-isolation`).
+- `test:web`: **14 / 14 passed** (2 suites: `AppShell.test.tsx`, `Tasks.test.tsx`).
+- `test:e2e`: **286+ passed**.
+
+### 2026-08-29 — Phase 2: Workflow Engine (Core relay backend + frontend + isolation gates)
 
 Closes the follow-up flagged in the entry below ("no automated test for mobile-nav reachability … standing one up is its own task"). **Non-sensitive** — test tooling + one presentational nav element; touches no auth/authz/isolation/session code, so it ships autonomously (§12). Committed on `main`.
 
