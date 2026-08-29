@@ -5,6 +5,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { appConfig, appEnv } from './config/configuration';
 import { DbModule } from './db/db.module';
 import { AuthModule } from './auth/auth.module';
+import { WorkflowModule } from './workflow/workflow.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { ResourceOwnerGuard } from './auth/guards/resource-owner.guard';
@@ -59,6 +60,7 @@ import { TenantContextInterceptor } from './auth/interceptors/tenant-context.int
     }),
     DbModule,
     AuthModule,
+    WorkflowModule,
   ],
   providers: [
     // Global guards run in registration order, so this sequence is load-bearing:

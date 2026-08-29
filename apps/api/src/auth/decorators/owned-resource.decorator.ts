@@ -22,6 +22,8 @@ import { SetMetadata } from '@nestjs/common';
 export const OWNED_TABLES = {
   team: 'team',
   user: '"user"',
+  task: 'task',
+  task_step: 'task_step',
 } as const;
 
 export type OwnedTable = keyof typeof OWNED_TABLES;
