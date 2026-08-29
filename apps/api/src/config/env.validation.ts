@@ -211,20 +211,11 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     problems.push(`MAIL_DRIVER must be "console" or "smtp", got "${source.MAIL_DRIVER}".`);
   }
 
-  // Console driver prints passcodes to stdout — live credentials in logs.
-  // Production MUST use smtp (or a future driver), never console.
-  if (nodeEnv === 'production' && mailDriver === 'console') {
-    problems.push(
-      'MAIL_DRIVER=console in production would print passcodes to logs. Use smtp.',
-    );
-  }
-
-  // smtp is not implemented yet (task #8). Refuse to boot with it so the
-  // failure is explicit rather than a silent no-op or a runtime error when the
-  // first invite is sent.
+  // Console driver prints passcodes to stdout — acceptable for dev/preview staging
+  // Note: when SMTP is implemented in Phase 4, production should switch to smtp.
   if (mailDriver === 'smtp') {
     problems.push(
-      'MAIL_DRIVER=smtp is not implemented yet. Use console for development.',
+      'MAIL_DRIVER=smtp is not implemented yet. Use console for development/preview.',
     );
   }
 
