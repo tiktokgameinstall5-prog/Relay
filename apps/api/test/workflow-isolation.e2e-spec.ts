@@ -373,11 +373,26 @@ describe('Concurrent Forward Race & Write-Auth Sabotage Test', () => {
       http.post(`/api/tasks/${taskId}/forward`).set('Authorization', bearer(fx.memberA1)),
     ]);
 
-    const statuses = [req1.status, req2.status].sort();
-    // Exactly one 200 OK, and one 403 Forbidden (since Step 1 is completed and A1 no longer holds the active step)
-    expect(statuses).toEqual([200, 403]);
+    const winner = req1.status === 200 ? req1 : req2;
+    const loser = req1.status === 200 ? req2 : req1;
 
-    // Verify task is now cleanly at Step 2
+    // Exactly one 200 OK with RETURNING task payload
+    expect(winner.status).toBe(200);
+    expect(winner.body).toMatchObject({
+      id: taskId,
+      status: 'in_progress',
+      completedSteps: 1,
+      currentStepOrder: 2,
+      currentAssignee: { id: fx.memberA2.id },
+    });
+    expect(winner.body.steps[0].status).toBe('completed');
+    expect(winner.body.steps[1].status).toBe('active');
+
+    // Exactly one 403 Forbidden with clean business rejection (not 500, not double-applied)
+    expect(loser.status).toBe(403);
+    expect(loser.body.message).toMatch(/only the member currently holding the active step/i);
+
+    // Verify task state in database is cleanly at Step 2
     const verifyRes = await http
       .get(`/api/tasks/${taskId}`)
       .set('Authorization', bearer(fx.memberA1))
