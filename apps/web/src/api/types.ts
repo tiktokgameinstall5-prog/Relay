@@ -219,5 +219,13 @@ export interface CreateTaskInput {
   name: string;
   type: TaskType;
   description?: string | undefined;
-  memberIds: string[];
+  memberIds?: string[] | undefined;
+  teamId?: string | undefined;
+  targetManagerId?: string | undefined;
+  targetMemberId?: string | undefined;
 }
+
+export interface ForwardStepInput {
+  targetUserId?: string | undefined;
+}
+

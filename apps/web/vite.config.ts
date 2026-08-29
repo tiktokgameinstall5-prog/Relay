@@ -33,7 +33,7 @@ export default defineConfig({
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     // Windows + npm workspace: single-worker execution starts reliably.
-    pool: 'threads',
+    pool: 'forks',
     fileParallelism: false,
   },
 });

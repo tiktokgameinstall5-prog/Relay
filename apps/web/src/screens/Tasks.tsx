@@ -3,28 +3,38 @@
  *
  * Displays all tasks in the caller's tenant slice:
  *   • Manager: Can view team tasks, create new ordered relay tasks, and watch live progression.
- *   • Member: Can view team tasks and see their active step with a prominent "Forward to [Next]" button.
- *   • Owner: Org-wide task oversight.
+ *   • Member: Can view team tasks, see their active step with sequential forward or peer hand-off.
+ *   • Owner: Org-wide task oversight and cross-org assignment (to Team, Manager, or Member).
  *
- * Implements 5-second short polling so step completions by teammates reflect live.
+ * Implements 5-second short polling so step completions and hand-offs by teammates reflect live.
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import {
+  ArrowRightLeft,
   CheckCircle2,
+  ChevronDown,
   FileText,
   Paperclip,
   Plus,
   Radio,
   Send,
+  Shield,
+  User,
+  Users,
   Video,
   X,
-  ArrowDown,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { createTask, forwardStep, listTasks } from '../api/workflow';
-import { listTeamMembers, listTeams } from '../api/auth';
+import { listManagers, listTeamMembers, listTeams } from '../api/auth';
 import { ApiError } from '../api/client';
-import type { MemberRow, TaskResponse, TaskType } from '../api/types';
+import type {
+  ManagerListRow,
+  MemberRow,
+  TaskResponse,
+  TaskType,
+  TeamListRow,
+} from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
 import { Panel } from '../components/Panel';
@@ -74,7 +84,7 @@ export function Tasks() {
     return () => clearInterval(timer);
   }, [reload]);
 
-  const isManager = user?.role === 'manager';
+  const canAssign = user?.role === 'manager' || user?.role === 'owner';
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -91,7 +101,7 @@ export function Tasks() {
           </p>
         </div>
 
-        {isManager && (
+        {canAssign && (
           <Button variant="primary" onClick={() => setShowCreateModal(true)}>
             <Plus size={16} className="-ml-1" />
             Assign task
@@ -109,7 +119,7 @@ export function Tasks() {
         <AsyncView state={state}>
           {(tasks) =>
             tasks.length === 0 ? (
-              <EmptyTasksState isManager={isManager} onAssign={() => setShowCreateModal(true)} />
+              <EmptyTasksState canAssign={canAssign} onAssign={() => setShowCreateModal(true)} />
             ) : (
               <div className="space-y-4">
                 {tasks.map((task) => (
@@ -132,6 +142,7 @@ export function Tasks() {
 
       {showCreateModal && (
         <CreateTaskModal
+          userRole={user?.role ?? 'manager'}
           onClose={() => setShowCreateModal(false)}
           onCreated={() => {
             setShowCreateModal(false);
@@ -144,10 +155,10 @@ export function Tasks() {
 }
 
 function EmptyTasksState({
-  isManager,
+  canAssign,
   onAssign,
 }: {
-  isManager: boolean;
+  canAssign: boolean;
   onAssign: () => void;
 }) {
   return (
@@ -157,11 +168,11 @@ function EmptyTasksState({
       </div>
       <h3 className="mt-4 font-semibold text-ink">No tasks assigned yet</h3>
       <p className="text-muted mt-1 max-w-sm text-sm">
-        {isManager
-          ? 'Assign your team their first relay task to start moving work sequentially through the chain.'
+        {canAssign
+          ? 'Assign your team or organization a relay task to start moving work sequentially through the chain.'
           : 'No tasks have been assigned to your team yet.'}
       </p>
-      {isManager && (
+      {canAssign && (
         <div className="mt-5">
           <Button variant="primary" onClick={onAssign}>
             <Plus size={16} className="-ml-1" />
@@ -185,8 +196,10 @@ function TaskCard({
   onForwardError: (msg: string) => void;
 }) {
   const [forwarding, setForwarding] = useState(false);
+  const [showHandoffPicker, setShowHandoffPicker] = useState(false);
+  const [teamMembers, setTeamMembers] = useState<MemberRow[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
 
-  const isCompleted = task.status === 'completed';
   const isMyActiveStep =
     task.status === 'in_progress' && task.currentAssignee?.id === currentUserId;
 
@@ -203,10 +216,15 @@ function TaskCard({
     durationSeconds: step.durationSeconds,
   }));
 
-  async function handleForward() {
+  async function handleForward(targetUserId?: string) {
     setForwarding(true);
     try {
-      await forwardStep(task.id);
+      if (targetUserId) {
+        await forwardStep(task.id, { targetUserId });
+      } else {
+        await forwardStep(task.id);
+      }
+      setShowHandoffPicker(false);
       onForwardSuccess();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -218,6 +236,26 @@ function TaskCard({
       setForwarding(false);
     }
   }
+
+  async function handleToggleHandoff() {
+    if (!showHandoffPicker && task.teamId && teamMembers.length === 0) {
+      setLoadingMembers(true);
+      try {
+        const members = await listTeamMembers(task.teamId);
+        setTeamMembers(members);
+      } catch {
+        // Fallback: use team members from steps
+      } finally {
+        setLoadingMembers(false);
+      }
+    }
+    setShowHandoffPicker((prev) => !prev);
+  }
+
+  // Filter eligible peers for hand-off (teammates only, excluding self)
+  const eligiblePeers = teamMembers.filter(
+    (m) => m.id !== currentUserId && m.role === 'member' && m.status === 'active',
+  );
 
   return (
     <Panel className="overflow-hidden border border-hairline transition-shadow hover:shadow-sm">
@@ -261,15 +299,29 @@ function TaskCard({
           <RelayChain steps={relaySteps} />
         </div>
 
-        {/* Action Bar / Forward Prompt */}
+        {/* Action Bar / Forward & Hand-off Prompts */}
         <div className="mt-4 flex flex-col items-start justify-between gap-3 border-t border-hairline pt-3 text-xs sm:flex-row sm:items-center">
           <div className="text-faint">Created {fmtDateTime(task.createdAt)}</div>
 
           {isMyActiveStep && (
-            <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+              {task.teamId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleToggleHandoff}
+                  disabled={forwarding}
+                  className="text-xs"
+                >
+                  <ArrowRightLeft size={13} className="-ml-0.5" />
+                  Hand off to peer
+                  <ChevronDown size={12} className="ml-1 opacity-60" />
+                </Button>
+              )}
+
               <Button
                 variant="primary"
-                onClick={handleForward}
+                onClick={() => handleForward()}
                 disabled={forwarding}
                 className="bg-active hover:bg-blue-600 font-semibold"
               >
@@ -283,35 +335,112 @@ function TaskCard({
             </div>
           )}
         </div>
+
+        {/* Peer Hand-off Selector Flyout */}
+        {showHandoffPicker && isMyActiveStep && (
+          <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-ink">Select teammate to hand off to:</span>
+              <button
+                type="button"
+                onClick={() => setShowHandoffPicker(false)}
+                className="text-muted hover:text-ink"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {loadingMembers ? (
+              <p className="text-muted mt-2 text-xs">Loading team roster...</p>
+            ) : eligiblePeers.length === 0 ? (
+              <p className="text-muted mt-2 text-xs">No eligible teammates found in your team.</p>
+            ) : (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {eligiblePeers.map((peer) => (
+                  <button
+                    key={peer.id}
+                    type="button"
+                    onClick={() => handleForward(peer.id)}
+                    disabled={forwarding}
+                    className="flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-ink shadow-2xs transition-colors hover:border-active hover:bg-blue-50 hover:text-active"
+                  >
+                    <Avatar name={peer.name} size={18} />
+                    <span>{peer.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </Panel>
   );
 }
 
+type OwnerTargetMode = 'team' | 'manager' | 'member';
+
 function CreateTaskModal({
+  userRole,
   onClose,
   onCreated,
 }: {
+  userRole: string;
   onClose: () => void;
   onCreated: () => void;
 }) {
+  const isOwner = userRole === 'owner';
+
   const [name, setName] = useState('');
   const [type, setType] = useState<TaskType>('text');
   const [description, setDescription] = useState('');
+
+  // Owner target mode
+  const [targetMode, setTargetMode] = useState<OwnerTargetMode>('team');
+  const [selectedTeamId, setSelectedTeamId] = useState('');
+  const [selectedManagerId, setSelectedManagerId] = useState('');
+  const [selectedMemberId, setSelectedMemberId] = useState('');
+
+  // Relay order for team assignment
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load manager's team members
-  const { state: teamState } = useAsync(async () => {
+  // Load teams and managers for Owner / Manager
+  const { state: orgDataState } = useAsync(async () => {
     const teams = await listTeams();
-    const myTeam = teams[0] ?? null;
-    if (!myTeam) return { team: null, members: [] };
-    const members = await listTeamMembers(myTeam.id);
-    return { team: myTeam, members };
+    let managers: ManagerListRow[] = [];
+    if (isOwner) {
+      try {
+        managers = await listManagers();
+      } catch {
+        // Ignore if forbidden
+      }
+    }
+    return { teams, managers };
   });
 
+  // Selected team's members
+  const activeTeamId = isOwner ? selectedTeamId : (orgDataState.data?.teams[0]?.id ?? '');
+  const { state: teamMembersState } = useAsync(
+    async () => {
+      if (!activeTeamId) return [];
+      return await listTeamMembers(activeTeamId);
+    },
+    activeTeamId,
+  );
+
+  // Set default selected team or manager once loaded
+  useEffect(() => {
+    if (orgDataState.data?.teams && orgDataState.data.teams.length > 0 && !selectedTeamId) {
+      setSelectedTeamId(orgDataState.data.teams[0].id);
+    }
+    if (orgDataState.data?.managers && orgDataState.data.managers.length > 0 && !selectedManagerId) {
+      setSelectedManagerId(orgDataState.data.managers[0].id);
+    }
+  }, [orgDataState.data, selectedTeamId, selectedManagerId]);
+
   function handleAddMemberToRelay(memberId: string) {
+    if (selectedMemberIds.includes(memberId)) return;
     setSelectedMemberIds((prev) => [...prev, memberId]);
   }
 
@@ -321,20 +450,68 @@ function CreateTaskModal({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (selectedMemberIds.length === 0) {
-      setError('Please select at least one team member in the relay sequence.');
+    setError(null);
+
+    if (!name.trim()) {
+      setError('Please provide a task name.');
       return;
     }
 
     setSubmitting(true);
-    setError(null);
     try {
-      await createTask({
-        name: name.trim(),
-        type,
-        description: description.trim() ? description.trim() : undefined,
-        memberIds: selectedMemberIds,
-      });
+      if (isOwner) {
+        if (targetMode === 'team') {
+          if (!selectedTeamId) {
+            setError('Please select a target team.');
+            setSubmitting(false);
+            return;
+          }
+          await createTask({
+            name: name.trim(),
+            type,
+            description: description.trim() ? description.trim() : undefined,
+            teamId: selectedTeamId,
+            memberIds: selectedMemberIds.length > 0 ? selectedMemberIds : undefined,
+          });
+        } else if (targetMode === 'manager') {
+          if (!selectedManagerId) {
+            setError('Please select a target manager.');
+            setSubmitting(false);
+            return;
+          }
+          await createTask({
+            name: name.trim(),
+            type,
+            description: description.trim() ? description.trim() : undefined,
+            targetManagerId: selectedManagerId,
+          });
+        } else if (targetMode === 'member') {
+          if (!selectedMemberId) {
+            setError('Please select a target member.');
+            setSubmitting(false);
+            return;
+          }
+          await createTask({
+            name: name.trim(),
+            type,
+            description: description.trim() ? description.trim() : undefined,
+            targetMemberId: selectedMemberId,
+          });
+        }
+      } else {
+        // Manager task creation
+        if (selectedMemberIds.length === 0) {
+          setError('Please select at least one team member in the relay sequence.');
+          setSubmitting(false);
+          return;
+        }
+        await createTask({
+          name: name.trim(),
+          type,
+          description: description.trim() ? description.trim() : undefined,
+          memberIds: selectedMemberIds,
+        });
+      }
       onCreated();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
@@ -348,9 +525,138 @@ function CreateTaskModal({
   }
 
   return (
-    <ModalShell title="Assign new task relay" onClose={onClose}>
+    <ModalShell title={isOwner ? 'Assign task (Owner)' : 'Assign new task relay'} onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <Alert variant="error">{error}</Alert>}
+
+        {/* Owner Target Mode Selector */}
+        {isOwner && (
+          <div>
+            <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-muted">
+              Assign target
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'team' as OwnerTargetMode, label: 'Whole Team', icon: Users },
+                { id: 'manager' as OwnerTargetMode, label: 'Manager', icon: Shield },
+                { id: 'member' as OwnerTargetMode, label: 'Specific Member', icon: User },
+              ].map((item) => {
+                const Icon = item.icon;
+                const isSelected = targetMode === item.id;
+                return (
+                  <button
+                    type="button"
+                    key={item.id}
+                    onClick={() => {
+                      setTargetMode(item.id);
+                      setSelectedMemberIds([]);
+                    }}
+                    className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
+                      isSelected
+                        ? 'border-active bg-blue-50 text-active'
+                        : 'border-hairline bg-white text-muted hover:bg-cool-slate'
+                    }`}
+                  >
+                    <Icon size={14} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Owner Target Pickers */}
+        {isOwner && (
+          <AsyncView state={orgDataState}>
+            {({ teams, managers }) => (
+              <div className="space-y-3">
+                {targetMode === 'team' && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted">Select team</label>
+                    <select
+                      aria-label="Select target team"
+                      value={selectedTeamId}
+                      onChange={(e) => {
+                        setSelectedTeamId(e.target.value);
+                        setSelectedMemberIds([]);
+                      }}
+                      className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink outline-none focus:border-active focus:ring-1 focus:ring-active"
+                    >
+                      {teams.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} (Manager: {t.managerName}, {t.memberCount} members)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {targetMode === 'manager' && (
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-muted">Select manager</label>
+                    <select
+                      aria-label="Select target manager"
+                      value={selectedManagerId}
+                      onChange={(e) => setSelectedManagerId(e.target.value)}
+                      className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink outline-none focus:border-active focus:ring-1 focus:ring-active"
+                    >
+                      {managers.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {targetMode === 'member' && (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted">Team</label>
+                      <select
+                        aria-label="Select target team"
+                        value={selectedTeamId}
+                        onChange={(e) => {
+                          setSelectedTeamId(e.target.value);
+                          setSelectedMemberId('');
+                        }}
+                        className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink outline-none focus:border-active focus:ring-1 focus:ring-active"
+                      >
+                        {teams.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-muted">Member</label>
+                      <AsyncView state={teamMembersState}>
+                        {(members) => (
+                          <select
+                            aria-label="Select target member"
+                            value={selectedMemberId}
+                            onChange={(e) => setSelectedMemberId(e.target.value)}
+                            className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink outline-none focus:border-active focus:ring-1 focus:ring-active"
+                          >
+                            <option value="">-- Choose member --</option>
+                            {members.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.email})
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </AsyncView>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </AsyncView>
+        )}
 
         <Field
           label="Task name"
@@ -361,7 +667,7 @@ function CreateTaskModal({
         />
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-[#68707C]">Task type</label>
+          <label className="mb-1 block text-xs font-medium text-muted">Task type</label>
           <div className="grid grid-cols-3 gap-2">
             {[
               { id: 'text' as TaskType, label: 'Text', icon: FileText },
@@ -390,107 +696,122 @@ function CreateTaskModal({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-[#68707C]">
+          <label className="mb-1 block text-xs font-medium text-muted">
             Description (optional)
           </label>
           <textarea
             rows={2}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief notes or instructions for the team..."
+            placeholder="Brief notes or instructions for the assignee..."
             className="focus:ring-signal w-full rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:ring-2"
           />
         </div>
 
-        {/* Member Roster & Relay Order Picker */}
-        <div className="border-t border-hairline pt-3">
-          <label className="text-muted block text-xs font-semibold uppercase tracking-wider">
-            Relay sequence (ordered steps)
-          </label>
-          <p className="text-faint text-xs">
-            Add team members in the order work should flow. Step 1 starts immediately.
-          </p>
+        {/* Relay Sequence Picker (for Manager or Owner -> Team mode) */}
+        {(!isOwner || targetMode === 'team') && (
+          <div className="border-t border-hairline pt-3">
+            <label className="text-muted block text-xs font-semibold uppercase tracking-wider">
+              Relay sequence (ordered steps)
+            </label>
+            <p className="text-faint text-xs">
+              {isOwner
+                ? 'Optional: pick specific members in order. If empty, defaults to all team members.'
+                : 'Add team members in the order work should flow. Step 1 starts immediately.'}
+            </p>
 
-          <AsyncView state={teamState}>
-            {({ members }) => {
-              const memberMap = new Map(members.map((m) => [m.id, m]));
+            <AsyncView state={teamMembersState}>
+              {(members) => {
+                const memberMap = new Map(members.map((m) => [m.id, m]));
 
-              return (
-                <div className="mt-3 space-y-3">
-                  {/* Selected Ordered Steps */}
-                  {selectedMemberIds.length > 0 ? (
-                    <div className="space-y-2 rounded-lg bg-wash p-3">
-                      {selectedMemberIds.map((memberId, idx) => {
-                        const m = memberMap.get(memberId);
-                        const memberName = m?.name ?? 'Member';
-                        return (
-                          <div
-                            key={`${memberId}-${idx}`}
-                            className="flex items-center justify-between rounded-md border border-hairline bg-white px-3 py-2 text-sm shadow-xs"
-                          >
-                            <div className="flex items-center gap-2.5">
-                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-active font-mono text-[10px] font-bold text-white">
-                                {idx + 1}
-                              </span>
-                              <Avatar name={memberName} size={24} />
-                              <span className="font-medium text-ink">{memberName}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveStep(idx)}
-                              className="text-faint hover:text-red-500"
-                              title="Remove step"
+                return (
+                  <div className="mt-3 space-y-3">
+                    {/* Selected Ordered Steps */}
+                    {selectedMemberIds.length > 0 ? (
+                      <div className="space-y-2 rounded-lg bg-wash p-3">
+                        {selectedMemberIds.map((memberId, idx) => {
+                          const m = memberMap.get(memberId);
+                          const memberName = m?.name ?? 'Member';
+                          return (
+                            <div
+                              key={`${memberId}-${idx}`}
+                              className="flex items-center justify-between rounded-md border border-hairline bg-white px-3 py-2 text-sm shadow-xs"
                             >
-                              <X size={14} />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-dashed border-hairline p-4 text-center text-xs text-muted">
-                      No members added to the chain yet. Click below to add steps.
-                    </div>
-                  )}
-
-                  {/* Available Team Members to Append */}
-                  <div>
-                    <span className="text-muted block text-xs font-medium">Add step to chain:</span>
-                    {members.length === 0 ? (
-                      <p className="text-amber mt-1 text-xs">
-                        No active members found in your team roster. Add members to your team first.
-                      </p>
+                              <div className="flex items-center gap-2.5">
+                                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-active font-mono text-[10px] font-bold text-white">
+                                  {idx + 1}
+                                </span>
+                                <Avatar name={memberName} size={24} />
+                                <span className="font-medium text-ink">{memberName}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveStep(idx)}
+                                className="text-faint hover:text-red-500"
+                                title="Remove step"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
                     ) : (
-                      <div className="mt-1.5 flex flex-wrap gap-1.5">
-                        {members.map((m: MemberRow) => (
-                          <button
-                            type="button"
-                            key={m.id}
-                            onClick={() => handleAddMemberToRelay(m.id)}
-                            className="flex items-center gap-1.5 rounded-full border border-hairline bg-white px-3 py-1 text-xs font-medium text-ink hover:border-active hover:bg-blue-50"
-                          >
-                            <Plus size={12} className="text-active" />
-                            {m.name}
-                          </button>
-                        ))}
+                      <div className="rounded-lg border border-dashed border-hairline p-4 text-center text-xs text-muted">
+                        {isOwner
+                          ? 'No custom sequence chosen. Task will flow through all team members.'
+                          : 'No members added to the chain yet. Click below to add steps.'}
                       </div>
                     )}
+
+                    {/* Available Team Members to Append */}
+                    <div>
+                      <span className="text-muted block text-xs font-medium">Add step to chain:</span>
+                      {members.length === 0 ? (
+                        <p className="text-amber mt-1 text-xs">
+                          No active members found in this team roster.
+                        </p>
+                      ) : (
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
+                          {members.map((m: MemberRow) => {
+                            const isAlreadySelected = selectedMemberIds.includes(m.id);
+                            return (
+                              <button
+                                type="button"
+                                key={m.id}
+                                disabled={isAlreadySelected}
+                                onClick={() => handleAddMemberToRelay(m.id)}
+                                className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+                                  isAlreadySelected
+                                    ? 'border-hairline bg-cool-slate text-faint cursor-not-allowed'
+                                    : 'border-hairline bg-white text-ink hover:border-active hover:bg-blue-50'
+                                }`}
+                              >
+                                <Plus size={12} className={isAlreadySelected ? 'text-faint' : 'text-active'} />
+                                {m.name}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-              );
-            }}
-          </AsyncView>
-        </div>
+                );
+              }}
+            </AsyncView>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2 border-t border-hairline pt-4">
           <Button variant="secondary" type="button" onClick={onClose}>
             Cancel
           </Button>
-          <Button variant="primary" type="submit" disabled={submitting || selectedMemberIds.length === 0}>
-            {submitting ? 'Creating...' : 'Create relay task'}
+          <Button variant="primary" type="submit" disabled={submitting}>
+            {submitting ? 'Assigning...' : isOwner ? 'Confirm assignment' : 'Create relay task'}
           </Button>
         </div>
       </form>
     </ModalShell>
   );
 }
+

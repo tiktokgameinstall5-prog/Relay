@@ -25,6 +25,7 @@ const mockedWorkflow = vi.mocked(workflowApi);
 vi.mock('../api/auth', () => ({
   listTeams: vi.fn(),
   listTeamMembers: vi.fn(),
+  listManagers: vi.fn(),
 }));
 const mockedAuth = vi.mocked(authApi);
 
@@ -272,6 +273,188 @@ describe('Tasks Screen', () => {
       type: 'text',
       description: undefined,
       memberIds: ['u-member-1', 'u-member-2'],
+    });
+  });
+
+  it('allows active assignee to click Peer Hand-off, select teammate, and call forwardStep with targetUserId', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('member', 'u-member-1', 'Bob Member'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([mockTaskInProgress]);
+    mockedAuth.listTeamMembers.mockResolvedValue([
+      {
+        id: 'u-member-1',
+        name: 'Bob Member',
+        email: 'bob@relay.test',
+        role: 'member',
+        status: 'active',
+        pendingInvite: false,
+        teamId: 'team-1',
+        createdAt: new Date().toISOString(),
+      },
+      {
+        id: 'u-member-3',
+        name: 'Dave Teammate',
+        email: 'dave@relay.test',
+        role: 'member',
+        status: 'active',
+        pendingInvite: false,
+        teamId: 'team-1',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedWorkflow.forwardStep.mockResolvedValue({
+      ...mockTaskInProgress,
+      currentStepOrder: 2,
+      currentAssignee: { id: 'u-member-3', name: 'Dave Teammate' },
+    });
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const handoffToggleBtn = await screen.findByRole('button', { name: /hand off to peer/i });
+    await user.click(handoffToggleBtn);
+
+    const peerBtn = await screen.findByRole('button', { name: /dave teammate/i });
+    await user.click(peerBtn);
+
+    expect(mockedWorkflow.forwardStep).toHaveBeenCalledWith('task-1', {
+      targetUserId: 'u-member-3',
+    });
+  });
+
+  it('allows Owner to open modal, select Manager target mode, and assign direct task', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('owner', 'o1', 'Owner Oscar'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([]);
+    mockedAuth.listTeams.mockResolvedValue([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        managerId: 'm1',
+        managerName: 'Manager Alice',
+        managerEmail: 'alice@relay.test',
+        memberCount: 2,
+        pendingInviteCount: 0,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedAuth.listManagers.mockResolvedValue([
+      {
+        id: 'm1',
+        name: 'Manager Alice',
+        email: 'alice@relay.test',
+        status: 'active',
+        pendingInvite: false,
+        teamId: 'team-1',
+        teamName: 'Alpha Team',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedWorkflow.createTask.mockResolvedValue(mockTaskInProgress);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const assignBtn = await screen.findByRole('button', { name: /assign task/i });
+    await user.click(assignBtn);
+
+    expect(screen.getByText('Assign task (Owner)')).toBeInTheDocument();
+
+    const managerModeBtn = screen.getByRole('button', { name: /manager/i });
+    await user.click(managerModeBtn);
+
+    const nameInput = screen.getByPlaceholderText(/brand launch video/i);
+    await user.type(nameInput, 'Quarterly Review Task');
+
+    const submitBtn = screen.getByRole('button', { name: /confirm assignment/i });
+    await user.click(submitBtn);
+
+    expect(mockedWorkflow.createTask).toHaveBeenCalledWith({
+      name: 'Quarterly Review Task',
+      type: 'text',
+      description: undefined,
+      targetManagerId: 'm1',
+    });
+  });
+
+  it('allows Owner to open modal, select Member target mode, and assign direct task', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('owner', 'o1', 'Owner Oscar'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([]);
+    mockedAuth.listTeams.mockResolvedValue([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        managerId: 'm1',
+        managerName: 'Manager Alice',
+        managerEmail: 'alice@relay.test',
+        memberCount: 2,
+        pendingInviteCount: 0,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedAuth.listTeamMembers.mockResolvedValue([
+      {
+        id: 'u-member-1',
+        name: 'Bob Member',
+        email: 'bob@relay.test',
+        role: 'member',
+        status: 'active',
+        pendingInvite: false,
+        teamId: 'team-1',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedWorkflow.createTask.mockResolvedValue(mockTaskInProgress);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const assignBtn = await screen.findByRole('button', { name: /assign task/i });
+    await user.click(assignBtn);
+
+    const memberModeBtn = screen.getByRole('button', { name: /specific member/i });
+    await user.click(memberModeBtn);
+
+    const nameInput = screen.getByPlaceholderText(/brand launch video/i);
+    await user.type(nameInput, 'Direct Member Task');
+
+    // Wait for member select to populate
+    const memberSelect = await screen.findByLabelText('Select target member');
+    await user.selectOptions(memberSelect, 'u-member-1');
+
+    const submitBtn = screen.getByRole('button', { name: /confirm assignment/i });
+    await user.click(submitBtn);
+
+    expect(mockedWorkflow.createTask).toHaveBeenCalledWith({
+      name: 'Direct Member Task',
+      type: 'text',
+      description: undefined,
+      targetMemberId: 'u-member-1',
     });
   });
 });
