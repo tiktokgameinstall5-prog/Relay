@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { WorkflowService } from './workflow.service';
 import { CreateTaskDto } from './dto/create-task.dto';
+import { ForwardStepDto } from './dto/forward-step.dto';
 import { TaskResponseDto } from './dto/task-response.dto';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { OwnedResource } from '../auth/decorators/owned-resource.decorator';
@@ -35,30 +36,32 @@ export class TaskController {
   constructor(@Inject(WorkflowService) private readonly workflow: WorkflowService) {}
 
   /**
-   * Manager assigns an ordered relay to their own team (CLAUDE.md §2).
-   * Restricted to @Roles('manager') in this first cut.
+   * Assign a task relay (Manager or Owner) (CLAUDE.md §2).
    */
   @ApiOperation({
-    summary: 'Assign a team relay task (Manager only)',
+    summary: 'Assign a task relay (Manager or Owner)',
     description:
-      'Manager creates a task split into an ordered chain of task steps, one per assigned member. ' +
-      'Step 1 goes active immediately. Owner assignment and member handoffs are deferred to a fast-follow.',
+      'Manager assigns an ordered relay to their own team. ' +
+      'Owner can assign to a whole team, directly to a manager, or directly to a specific member across the organization.',
   })
   @ApiBearerAuth()
   @ApiCreatedResponse({ type: TaskResponseDto })
   @ApiBadRequestResponse({
     description:
-      'Manager has no active team, or one or more memberIds do not belong to the manager’s active team.',
+      'Target team/manager/member not found, duplicate member in relay, or assigned members outside target team.',
   })
-  @ApiForbiddenResponse({ description: 'Caller is not a Manager.' })
+  @ApiForbiddenResponse({ description: 'Caller is a Member or missing required role.' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token.' })
-  @Roles('manager')
+  @Roles('manager', 'owner')
   @SkipThrottle({ login: true, signup: true })
   @Post()
   async createTask(
     @CurrentUser() actor: CurrentUserType,
     @Body() dto: CreateTaskDto,
   ): Promise<TaskResponseDto> {
+    if (actor.role === 'owner') {
+      return await this.workflow.assignOwnerTask(actor, dto);
+    }
     return await this.workflow.assignTeamRelay(actor, dto);
   }
 
@@ -99,13 +102,14 @@ export class TaskController {
   }
 
   /**
-   * Forward / complete the active step in a task's relay chain.
-   * Only the member holding the active step can forward it.
+   * Forward / complete active step in a task's relay chain, or peer hand-off.
+   * Only the member holding the active step can forward or hand off.
    */
   @ApiOperation({
-    summary: 'Forward / complete active step in task relay',
+    summary: 'Forward active step or peer hand-off',
     description:
-      'Completes the active step and advances the relay chain to the next step. ' +
+      'Completes the active step and either advances sequentially to the next step, ' +
+      'or hands off early to a specific teammate if targetUserId is provided. ' +
       'When the final step completes, the task status becomes completed. ' +
       'Write authorization requires caller to be the active step assignee.',
   })
@@ -114,6 +118,7 @@ export class TaskController {
   @ApiNotFoundResponse({ description: 'Task not found or outside tenant slice.' })
   @ApiForbiddenResponse({ description: 'Caller is not the assignee holding the active step.' })
   @ApiConflictResponse({ description: 'Task is already completed or has no active step.' })
+  @ApiBadRequestResponse({ description: 'Invalid targetUserId (e.g. self hand-off or cross-team).' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token.' })
   @OwnedResource({ table: 'task', param: 'id' })
   @HttpCode(HttpStatus.OK)
@@ -121,7 +126,8 @@ export class TaskController {
   async forwardStep(
     @CurrentUser() actor: CurrentUserType,
     @Param('id') id: string,
+    @Body() dto?: ForwardStepDto,
   ): Promise<TaskResponseDto> {
-    return await this.workflow.forwardStep(actor, id);
+    return await this.workflow.forwardStep(actor, id, dto);
   }
 }

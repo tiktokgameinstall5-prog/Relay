@@ -11,6 +11,7 @@ import type { PoolClient } from 'pg';
 import { DbService } from '../db/db.service';
 import type { CurrentUser } from '../db/tenant-context';
 import type { CreateTaskDto } from './dto/create-task.dto';
+import type { ForwardStepDto } from './dto/forward-step.dto';
 import type {
   TaskAssigneeDto,
   TaskResponseDto,
@@ -53,15 +54,22 @@ export class WorkflowService {
 
   /**
    * Manager assigns an ordered relay to their own team (CLAUDE.md §2).
-   *
-   * 1. Resolves manager's active team.
-   * 2. Validates that all memberIds belong to this manager's active team.
-   * 3. Creates parent `task` with `team_id` populated, status 'in_progress'.
-   * 4. Creates sequential `task_step` rows with Step 1 'active' (started_at = now()).
    */
   async assignTeamRelay(actor: CurrentUser, dto: CreateTaskDto): Promise<TaskResponseDto> {
     if (actor.role !== 'manager') {
-      throw new ForbiddenException('Only managers can assign team relay tasks in this cut');
+      throw new ForbiddenException('Only managers can assign team relay tasks via this method');
+    }
+
+    const memberIds = dto.memberIds;
+    if (!memberIds || memberIds.length === 0) {
+      throw new BadRequestException('At least one member must be assigned to the relay');
+    }
+
+    // Reject duplicate memberIds in the array
+    if (new Set(memberIds).size !== memberIds.length) {
+      throw new BadRequestException(
+        'A member cannot be assigned to multiple steps in the same relay',
+      );
     }
 
     return await this.db.tx(async (c) => {
@@ -76,13 +84,12 @@ export class WorkflowService {
       const teamId = teamRes.rows[0].id;
 
       // 2. Validate memberIds: deduplicated count must match memberIds found in this team
-      const uniqueMemberIds = Array.from(new Set(dto.memberIds));
       const membersRes = await c.query<{ id: string }>(
         `SELECT id FROM "user"
           WHERE team_id = $1 AND status = 'active' AND id = ANY($2::uuid[])`,
-        [teamId, uniqueMemberIds],
+        [teamId, memberIds],
       );
-      if (membersRes.rows.length !== uniqueMemberIds.length) {
+      if (membersRes.rows.length !== memberIds.length) {
         throw new BadRequestException(
           'One or more assigned member IDs do not belong to your active team',
         );
@@ -109,8 +116,8 @@ export class WorkflowService {
       );
 
       // 4. Insert ordered task steps
-      for (let i = 0; i < dto.memberIds.length; i++) {
-        const memberId = dto.memberIds[i];
+      for (let i = 0; i < memberIds.length; i++) {
+        const memberId = memberIds[i];
         const stepId = randomUUID();
         const isFirst = i === 0;
         await c.query(
@@ -131,31 +138,262 @@ export class WorkflowService {
         );
       }
 
+      // 5. Audit log write (fire-and-forget, no RETURNING)
+      await this.writeAuditLog(c, actor, 'task.created', taskId, {
+        name: dto.name,
+        type: dto.type,
+        totalSteps: memberIds.length,
+        managerId: actor.userId,
+        teamId,
+      });
+
       return await this.fetchTaskById(c, taskId);
     });
   }
 
   /**
-   * Action: only the member holding the active step can forward it (CLAUDE.md §2).
-   *
-   * Write authorization is enforced directly inside the UPDATE WHERE clause:
-   *   UPDATE task_step SET status = 'completed', completed_at = now()
-   *    WHERE task_id = $1 AND status = 'active' AND assigned_user_id = $2
-   *
-   * This guarantees check-then-act race immunity and atomicity.
+   * Owner assigns a task across the organization (CLAUDE.md §2).
+   * Modes: Owner -> Team, Owner -> Manager, Owner -> Member.
    */
-  async forwardStep(actor: CurrentUser, taskId: string): Promise<TaskResponseDto> {
+  async assignOwnerTask(actor: CurrentUser, dto: CreateTaskDto): Promise<TaskResponseDto> {
+    if (actor.role !== 'owner') {
+      throw new ForbiddenException('Only owners can call assignOwnerTask');
+    }
+
+    const targetsProvided = [dto.teamId, dto.targetManagerId, dto.targetMemberId].filter(
+      Boolean,
+    ).length;
+    if (targetsProvided !== 1) {
+      throw new BadRequestException(
+        'Must specify exactly one target: teamId, targetManagerId, or targetMemberId',
+      );
+    }
+
+    return await this.db.tx(async (c) => {
+      const now = new Date();
+      const taskId = randomUUID();
+
+      // Mode A: Owner -> Team
+      if (dto.teamId) {
+        const teamRes = await c.query<{ id: string; manager_id: string }>(
+          `SELECT id, manager_id FROM team WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+          [dto.teamId, actor.orgId],
+        );
+        if (teamRes.rows.length === 0) {
+          throw new BadRequestException('Target team not found in your organization');
+        }
+        const team = teamRes.rows[0];
+
+        let memberIds: string[] = [];
+        if (dto.memberIds && dto.memberIds.length > 0) {
+          if (new Set(dto.memberIds).size !== dto.memberIds.length) {
+            throw new BadRequestException(
+              'A member cannot be assigned to multiple steps in the same relay',
+            );
+          }
+          const membersRes = await c.query<{ id: string }>(
+            `SELECT id FROM "user" WHERE team_id = $1 AND status = 'active' AND id = ANY($2::uuid[])`,
+            [team.id, dto.memberIds],
+          );
+          if (membersRes.rows.length !== dto.memberIds.length) {
+            throw new BadRequestException('One or more assigned member IDs do not belong to the target team');
+          }
+          memberIds = dto.memberIds;
+        } else {
+          // Default to all active members of the team
+          const allMembers = await c.query<{ id: string }>(
+            `SELECT id FROM "user" WHERE team_id = $1 AND status = 'active' ORDER BY ranking ASC, created_at ASC`,
+            [team.id],
+          );
+          if (allMembers.rows.length > 0) {
+            memberIds = allMembers.rows.map((m) => m.id);
+          } else {
+            // Team has no members yet -> assign step 1 to the manager
+            memberIds = [team.manager_id];
+          }
+        }
+
+        await c.query(
+          `INSERT INTO task (
+             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'in_progress', $9, $9)`,
+          [
+            taskId,
+            actor.orgId,
+            team.manager_id,
+            team.id,
+            dto.name,
+            dto.type,
+            dto.description ?? null,
+            actor.userId,
+            now,
+          ],
+        );
+
+        for (let i = 0; i < memberIds.length; i++) {
+          const isFirst = i === 0;
+          await c.query(
+            `INSERT INTO task_step (
+               id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+            [
+              randomUUID(),
+              actor.orgId,
+              team.manager_id,
+              taskId,
+              memberIds[i],
+              i + 1,
+              isFirst ? 'active' : 'pending',
+              isFirst ? now : null,
+              now,
+            ],
+          );
+        }
+
+        await this.writeAuditLog(c, actor, 'task.created', taskId, {
+          name: dto.name,
+          type: dto.type,
+          targetType: 'team',
+          teamId: team.id,
+          managerId: team.manager_id,
+          totalSteps: memberIds.length,
+        });
+
+        return await this.fetchTaskById(c, taskId);
+      }
+
+      // Mode B: Owner -> Manager
+      if (dto.targetManagerId) {
+        const mgrRes = await c.query<{ id: string }>(
+          `SELECT id FROM "user" WHERE id = $1 AND org_id = $2 AND role = 'manager' AND status = 'active'`,
+          [dto.targetManagerId, actor.orgId],
+        );
+        if (mgrRes.rows.length === 0) {
+          throw new BadRequestException('Target manager not found in your organization');
+        }
+
+        await c.query(
+          `INSERT INTO task (
+             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
+           ) VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, 'in_progress', $8, $8)`,
+          [
+            taskId,
+            actor.orgId,
+            dto.targetManagerId,
+            dto.name,
+            dto.type,
+            dto.description ?? null,
+            actor.userId,
+            now,
+          ],
+        );
+
+        await c.query(
+          `INSERT INTO task_step (
+             id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, 1, 'active', $6, $6, $6)`,
+          [
+            randomUUID(),
+            actor.orgId,
+            dto.targetManagerId,
+            taskId,
+            dto.targetManagerId,
+            now,
+          ],
+        );
+
+        await this.writeAuditLog(c, actor, 'task.created', taskId, {
+          name: dto.name,
+          type: dto.type,
+          targetType: 'manager',
+          targetManagerId: dto.targetManagerId,
+          totalSteps: 1,
+        });
+
+        return await this.fetchTaskById(c, taskId);
+      }
+
+      // Mode C: Owner -> Member
+      if (dto.targetMemberId) {
+        const memRes = await c.query<{ id: string; manager_id: string; team_id: string | null }>(
+          `SELECT id, manager_id, team_id FROM "user" WHERE id = $1 AND org_id = $2 AND role = 'member' AND status = 'active'`,
+          [dto.targetMemberId, actor.orgId],
+        );
+        if (memRes.rows.length === 0) {
+          throw new BadRequestException('Target member not found in your organization');
+        }
+        const member = memRes.rows[0];
+        if (!member.manager_id) {
+          throw new BadRequestException('Target member is not assigned to a manager');
+        }
+
+        await c.query(
+          `INSERT INTO task (
+             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'in_progress', $9, $9)`,
+          [
+            taskId,
+            actor.orgId,
+            member.manager_id,
+            member.team_id,
+            dto.name,
+            dto.type,
+            dto.description ?? null,
+            actor.userId,
+            now,
+          ],
+        );
+
+        await c.query(
+          `INSERT INTO task_step (
+             id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, 1, 'active', $6, $6, $6)`,
+          [
+            randomUUID(),
+            actor.orgId,
+            member.manager_id,
+            taskId,
+            member.id,
+            now,
+          ],
+        );
+
+        await this.writeAuditLog(c, actor, 'task.created', taskId, {
+          name: dto.name,
+          type: dto.type,
+          targetType: 'member',
+          targetMemberId: member.id,
+          managerId: member.manager_id,
+          teamId: member.team_id,
+          totalSteps: 1,
+        });
+
+        return await this.fetchTaskById(c, taskId);
+      }
+
+      throw new BadRequestException('Must specify teamId, targetManagerId, or targetMemberId');
+    });
+  }
+
+  /**
+   * Action: forward active step sequentially or perform a peer hand-off (CLAUDE.md §2).
+   */
+  async forwardStep(
+    actor: CurrentUser,
+    taskId: string,
+    dto?: ForwardStepDto,
+  ): Promise<TaskResponseDto> {
     return await this.db.tx(async (c) => {
       // 1. Verify task exists in tenant slice
-      const taskRes = await c.query<{ id: string; status: TaskStatus }>(
-        `SELECT id, status FROM task WHERE id = $1`,
+      const taskRes = await c.query<TaskDbRow>(
+        `SELECT id, org_id, manager_id, team_id, status FROM task WHERE id = $1`,
         [taskId],
       );
       if (taskRes.rows.length === 0) {
         throw new NotFoundException();
       }
-      const t = taskRes.rows[0];
-      if (t.status === 'completed') {
+      const task = taskRes.rows[0];
+      if (task.status === 'completed') {
         throw new ConflictException('Task is already completed');
       }
 
@@ -170,7 +408,6 @@ export class WorkflowService {
       );
 
       if (updateRes.rowCount === 0) {
-        // Find why: is there an active step assigned to someone else, or no active step?
         const activeRes = await c.query<{ id: string; assigned_user_id: string }>(
           `SELECT id, assigned_user_id FROM task_step WHERE task_id = $1 AND status = 'active'`,
           [taskId],
@@ -185,28 +422,144 @@ export class WorkflowService {
 
       const completedStepOrder = updateRes.rows[0].step_order;
 
-      // 3. Find next step in chain
-      const nextStepRes = await c.query<{ id: string }>(
-        `SELECT id FROM task_step WHERE task_id = $1 AND step_order = $2`,
-        [taskId, completedStepOrder + 1],
-      );
+      // 3. Branch: Peer Hand-Off vs Sequential Forward
+      if (dto?.targetUserId) {
+        if (dto.targetUserId === actor.userId) {
+          throw new BadRequestException('Cannot hand off task to yourself');
+        }
 
-      if (nextStepRes.rows.length > 0) {
-        // Activate next step
-        await c.query(
-          `UPDATE task_step
-              SET status = 'active', started_at = $1, updated_at = $1
-            WHERE id = $2`,
-          [now, nextStepRes.rows[0].id],
+        // Validate target user is a member belonging to the same manager/team slice
+        const targetRes = await c.query<{ id: string; manager_id: string; role: string }>(
+          `SELECT id, manager_id, role FROM "user" WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+          [dto.targetUserId, actor.orgId],
         );
+        if (targetRes.rows.length === 0) {
+          throw new BadRequestException('Target user is not in the same team');
+        }
+        const targetUser = targetRes.rows[0];
+        if (targetUser.role !== 'member' || targetUser.manager_id !== task.manager_id) {
+          throw new BadRequestException('Target user must be a member of the same team');
+        }
+
+        // Check if target is already in future pending steps
+        const pendingTargetRes = await c.query<{ id: string; step_order: number }>(
+          `SELECT id, step_order FROM task_step
+            WHERE task_id = $1 AND assigned_user_id = $2 AND status = 'pending'`,
+          [taskId, dto.targetUserId],
+        );
+
+        if (pendingTargetRes.rows.length > 0) {
+          const pendingTarget = pendingTargetRes.rows[0];
+          if (pendingTarget.step_order === completedStepOrder + 1) {
+            // Target is already the immediate next step -> standard activate
+            await c.query(
+              `UPDATE task_step SET status = 'active', started_at = $1, updated_at = $1 WHERE id = $2`,
+              [now, pendingTarget.id],
+            );
+            await this.writeAuditLog(c, actor, 'task_step.forwarded', taskId, {
+              completedStepOrder,
+              nextStepOrder: pendingTarget.step_order,
+              targetUserId: dto.targetUserId,
+            });
+          } else {
+            // Target is at a later step (m > completedStepOrder + 1) -> Deduplicate & Promote
+            // Negate target row's step_order to -(completedStepOrder + 1) and mark active
+            await c.query(
+              `UPDATE task_step
+                  SET step_order = $1, status = 'active', started_at = $2, updated_at = $2
+                WHERE id = $3`,
+              [-(completedStepOrder + 1), now, pendingTarget.id],
+            );
+
+            // Shift intervening steps between completedStepOrder and old step
+            await c.query(
+              `UPDATE task_step
+                  SET step_order = - (step_order + 1)
+                WHERE task_id = $1 AND step_order > $2 AND step_order < $3`,
+              [taskId, completedStepOrder, pendingTarget.step_order],
+            );
+
+            // Restore all negative step orders to positive in a single statement
+            await c.query(
+              `UPDATE task_step
+                  SET step_order = -step_order, updated_at = $1
+                WHERE task_id = $2 AND step_order < 0`,
+              [now, taskId],
+            );
+
+            await this.writeAuditLog(c, actor, 'task_step.handed_off', taskId, {
+              completedStepOrder,
+              targetUserId: dto.targetUserId,
+              promotedFromLaterStep: true,
+              oldStepOrder: pendingTarget.step_order,
+            });
+          }
+        } else {
+          // Target is not in pending steps -> Splice in
+          await c.query(
+            `UPDATE task_step
+                SET step_order = -step_order
+              WHERE task_id = $1 AND step_order > $2`,
+            [taskId, completedStepOrder],
+          );
+          await c.query(
+            `UPDATE task_step
+                SET step_order = (-step_order) + 1, updated_at = $1
+              WHERE task_id = $2 AND step_order < 0`,
+            [now, taskId],
+          );
+
+          await c.query(
+            `INSERT INTO task_step (
+               id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, $7, $7)`,
+            [
+              randomUUID(),
+              actor.orgId,
+              task.manager_id,
+              taskId,
+              dto.targetUserId,
+              completedStepOrder + 1,
+              now,
+            ],
+          );
+
+          await this.writeAuditLog(c, actor, 'task_step.handed_off', taskId, {
+            completedStepOrder,
+            targetUserId: dto.targetUserId,
+            promotedFromLaterStep: false,
+          });
+        }
       } else {
-        // Final step completed: parent task flips to completed!
-        await c.query(
-          `UPDATE task
-              SET status = 'completed', updated_at = $1
-            WHERE id = $2`,
-          [now, taskId],
+        // Sequential progression
+        const nextStepRes = await c.query<{ id: string }>(
+          `SELECT id FROM task_step WHERE task_id = $1 AND step_order = $2`,
+          [taskId, completedStepOrder + 1],
         );
+
+        if (nextStepRes.rows.length > 0) {
+          await c.query(
+            `UPDATE task_step
+                SET status = 'active', started_at = $1, updated_at = $1
+              WHERE id = $2`,
+            [now, nextStepRes.rows[0].id],
+          );
+          await this.writeAuditLog(c, actor, 'task_step.forwarded', taskId, {
+            completedStepOrder,
+            nextStepOrder: completedStepOrder + 1,
+          });
+        } else {
+          // Final step completed
+          await c.query(
+            `UPDATE task
+                SET status = 'completed', updated_at = $1
+              WHERE id = $2`,
+            [now, taskId],
+          );
+          await this.writeAuditLog(c, actor, 'task.completed', taskId, {
+            completedStepOrder,
+          });
+        }
       }
 
       return await this.fetchTaskById(c, taskId);
@@ -215,8 +568,6 @@ export class WorkflowService {
 
   /**
    * List tasks accessible to the caller's tenant slice.
-   * Owner → all tasks in org; Manager → own team tasks; Member → own team tasks.
-   * Scoped by RLS.
    */
   async listTasks(): Promise<TaskResponseDto[]> {
     return await this.db.tx(async (c) => {
@@ -239,7 +590,9 @@ export class WorkflowService {
                 s.step_order, s.status, s.started_at, s.completed_at
            FROM task_step s
            JOIN "user" u ON u.id = s.assigned_user_id
+          WHERE s.task_id = ANY($1::uuid[])
           ORDER BY s.task_id, s.step_order ASC`,
+        [tasksRes.rows.map((t) => t.id)],
       );
 
       const stepsByTaskId = new Map<string, StepDbRow[]>();
@@ -249,20 +602,20 @@ export class WorkflowService {
         stepsByTaskId.set(step.task_id, list);
       }
 
-      return tasksRes.rows.map((t) => this.assembleTaskDto(t, stepsByTaskId.get(t.id) ?? []));
+      return tasksRes.rows.map((task) =>
+        this.assembleTaskResponse(task, stepsByTaskId.get(task.id) ?? []),
+      );
     });
   }
 
   /**
-   * Get a single task by ID within the caller's tenant slice.
+   * Get single task by ID.
    */
   async getTask(taskId: string): Promise<TaskResponseDto> {
     return await this.db.tx(async (c) => {
       return await this.fetchTaskById(c, taskId);
     });
   }
-
-  // --- Internal helpers ----------------------------------------------------
 
   private async fetchTaskById(c: PoolClient, taskId: string): Promise<TaskResponseDto> {
     const taskRes = await c.query<TaskDbRow>(
@@ -274,7 +627,6 @@ export class WorkflowService {
         WHERE t.id = $1`,
       [taskId],
     );
-
     if (taskRes.rows.length === 0) {
       throw new NotFoundException();
     }
@@ -290,12 +642,12 @@ export class WorkflowService {
       [taskId],
     );
 
-    return this.assembleTaskDto(taskRes.rows[0], stepsRes.rows);
+    return this.assembleTaskResponse(taskRes.rows[0], stepsRes.rows);
   }
 
-  private assembleTaskDto(t: TaskDbRow, steps: StepDbRow[]): TaskResponseDto {
+  private assembleTaskResponse(task: TaskDbRow, steps: StepDbRow[]): TaskResponseDto {
+    const completedSteps = steps.filter((s) => s.status === 'completed').length;
     const activeStep = steps.find((s) => s.status === 'active');
-    const completedCount = steps.filter((s) => s.status === 'completed').length;
 
     let currentAssignee: TaskAssigneeDto | null = null;
     if (activeStep) {
@@ -309,25 +661,21 @@ export class WorkflowService {
 
     const stepDtos: TaskStepResponseDto[] = steps.map((s) => {
       let durationSeconds: number | null = null;
-      if (s.started_at && s.completed_at) {
-        durationSeconds = Math.max(
-          0,
-          Math.round((s.completed_at.getTime() - s.started_at.getTime()) / 1000),
-        );
-      } else if (s.status === 'active' && s.started_at) {
-        durationSeconds = Math.max(
-          0,
-          Math.round((Date.now() - s.started_at.getTime()) / 1000),
-        );
+      if (s.started_at) {
+        const endTime = s.completed_at ? new Date(s.completed_at).getTime() : Date.now();
+        const startTime = new Date(s.started_at).getTime();
+        durationSeconds = Math.max(0, Math.floor((endTime - startTime) / 1000));
       }
 
       return {
         id: s.id,
         taskId: s.task_id,
-        assignedUserId: s.assigned_user_id,
-        assignedUserName: s.assigned_user_name,
         stepOrder: s.step_order,
         status: s.status,
+        assignedUserId: s.assigned_user_id,
+        assignedUserName: s.assigned_user_name,
+        assignedUserEmail: s.assigned_user_email,
+        roleTitle: s.role_title,
         startedAt: s.started_at ? s.started_at.toISOString() : null,
         completedAt: s.completed_at ? s.completed_at.toISOString() : null,
         durationSeconds,
@@ -335,24 +683,38 @@ export class WorkflowService {
     });
 
     return {
-      id: t.id,
-      orgId: t.org_id,
-      managerId: t.manager_id,
-      teamId: t.team_id,
-      name: t.name,
-      type: t.type,
-      description: t.description,
-      createdByUserId: t.created_by_user_id,
-      createdByName: t.created_by_name,
-      status: t.status,
-      scheduledFor: t.scheduled_for ? t.scheduled_for.toISOString() : null,
-      createdAt: t.created_at.toISOString(),
-      updatedAt: t.updated_at.toISOString(),
-      currentStepOrder: activeStep ? activeStep.step_order : null,
+      id: task.id,
+      orgId: task.org_id,
+      managerId: task.manager_id,
+      teamId: task.team_id,
+      name: task.name,
+      type: task.type,
+      description: task.description,
+      createdByUserId: task.created_by_user_id,
+      createdByName: task.created_by_name,
+      status: task.status,
       totalSteps: steps.length,
-      completedSteps: completedCount,
+      completedSteps,
+      currentStepOrder: activeStep ? activeStep.step_order : null,
       currentAssignee,
+      scheduledFor: task.scheduled_for ? task.scheduled_for.toISOString() : null,
+      createdAt: task.created_at.toISOString(),
+      updatedAt: task.updated_at.toISOString(),
       steps: stepDtos,
     };
+  }
+
+  private async writeAuditLog(
+    c: PoolClient,
+    actor: CurrentUser,
+    action: string,
+    targetId: string,
+    metadata: Record<string, unknown>,
+  ): Promise<void> {
+    await c.query(
+      `INSERT INTO audit_log (org_id, actor_user_id, action, target_type, target_id, metadata)
+       VALUES ($1, $2, $3, 'task', $4, $5)`,
+      [actor.orgId, actor.userId, action, targetId, JSON.stringify(metadata)],
+    );
   }
 }

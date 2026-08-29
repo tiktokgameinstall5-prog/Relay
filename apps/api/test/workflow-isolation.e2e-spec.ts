@@ -2,23 +2,34 @@
  * The HTTP-layer isolation gate and workflow execution proof (CLAUDE.md §11).
  *
  * Covers:
- *   1. Task creation (POST /api/tasks): Role gating (Manager only in this cut),
- *      cross-tenant / cross-team member rejection.
+ *   1. Task creation (POST /api/tasks):
+ *      - Manager assignment to own team.
+ *      - Owner assignment to a whole Team, to a Manager, or to a specific Member.
+ *      - Rejection of duplicate memberIds ([A1, A2, A1] -> 400).
+ *      - Cross-tenant / cross-team member rejection.
+ *      - Member creation rejection (403).
  *   2. Collection read (GET /api/tasks): RLS-scoped collection sets for Owner, Manager, Member.
  *   3. Read-by-ID (GET /api/tasks/:id): Uniform 404 on cross-tenant / cross-org ID guessing.
  *   4. Forward action (POST /api/tasks/:id/forward): Step progression, active assignee enforcement,
  *      task completion auto-flip.
- *   5. Write-authorization enforcement & sabotage resistance.
- *   6. Concurrent forward race condition test (atomicity proof).
+ *   5. Member -> Member Peer Hand-off:
+ *      - Early redirect to a later-scheduled peer (deduplication & promotion).
+ *      - Hand-off to an unscheduled peer in the same team.
+ *      - Rejection of self hand-off (400) and cross-team hand-off (400).
+ *      - Rejection of non-assignee hand-off (403).
+ *   6. Write-authorization enforcement & sabotage resistance.
+ *   7. Concurrent forward & hand-off race condition tests (atomicity proof).
+ *   8. Audit log traceability (task.created, task_step.forwarded, task_step.handed_off, task.completed).
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { randomUUID } from 'node:crypto';
+import { hash } from 'bcryptjs';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { closePools, truncateAll, withTenant } from './helpers/db';
-import { ctxFor, seedFixture, type Fixture } from './helpers/seed';
+import { ctxFor, seedFixture, TEST_PASSWORD, type Fixture, type SeededUser } from './helpers/seed';
 import { bearer } from './helpers/token';
 
 jest.setTimeout(30_000);
@@ -26,6 +37,33 @@ jest.setTimeout(30_000);
 let app: INestApplication;
 let http: ReturnType<typeof request>;
 let fx: Fixture;
+
+async function seedExtraMember(
+  manager: SeededUser,
+  teamId: string,
+  label: string,
+): Promise<SeededUser> {
+  const memberId = randomUUID();
+  const email = `member.${label.toLowerCase()}@${manager.orgId.slice(0, 8)}.test`;
+  const passwordHash = await hash(TEST_PASSWORD, 4);
+
+  return await withTenant({ orgId: manager.orgId, role: 'owner', managerId: null }, async (c) => {
+    await c.query(
+      `INSERT INTO "user"
+         (id, org_id, role, name, email, password_hash, manager_id, team_id, role_title)
+       VALUES ($1, $2, 'member', $3, $4, $5, $6, $7, $8)`,
+      [memberId, manager.orgId, `Member ${label}`, email, passwordHash, manager.id, teamId, 'Contributor'],
+    );
+    return {
+      id: memberId,
+      email,
+      role: 'member',
+      orgId: manager.orgId,
+      managerId: manager.id,
+      teamId,
+    };
+  });
+}
 
 beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({
@@ -92,16 +130,162 @@ describe('POST /api/tasks — Creation & Relay Assembly', () => {
     expect(res.body.steps[1].startedAt).toBeNull();
   });
 
-  it('rejects Owner with 403 Forbidden (Manager only for this cut)', async () => {
-    await http
+  it('rejects duplicate memberIds in a single relay ([A1, A2, A1]) with 400', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.managerA))
+      .send({
+        name: 'Duplicate Relay Task',
+        type: 'text',
+        memberIds: [fx.memberA1.id, fx.memberA2.id, fx.memberA1.id],
+      })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/cannot be assigned to multiple steps/i);
+  });
+
+  it('allows Owner 1 to assign a task to Team A (Owner -> Team)', async () => {
+    const res = await http
       .post('/api/tasks')
       .set('Authorization', bearer(fx.owner1))
       .send({
-        name: 'Owner Task',
+        name: 'Owner Team Task',
         type: 'text',
-        memberIds: [fx.memberA1.id],
+        teamId: fx.teamAId,
+        memberIds: [fx.memberA1.id, fx.memberA2.id],
       })
-      .expect(403);
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      name: 'Owner Team Task',
+      teamId: fx.teamAId,
+      status: 'in_progress',
+      totalSteps: 2,
+      currentStepOrder: 1,
+      currentAssignee: { id: fx.memberA1.id },
+    });
+  });
+
+  it('allows Owner 1 to assign a task directly to Manager A (Owner -> Manager)', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'Owner Manager Direct Task',
+        type: 'file',
+        targetManagerId: fx.managerA.id,
+      })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      name: 'Owner Manager Direct Task',
+      status: 'in_progress',
+      totalSteps: 1,
+      currentStepOrder: 1,
+      currentAssignee: { id: fx.managerA.id },
+    });
+    expect(res.body.steps).toHaveLength(1);
+    expect(res.body.steps[0]).toMatchObject({
+      assignedUserId: fx.managerA.id,
+      stepOrder: 1,
+      status: 'active',
+    });
+  });
+
+  it('allows Owner 1 to assign a task directly to Member A1 (Owner -> Member)', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'Owner Member Direct Task',
+        type: 'text',
+        targetMemberId: fx.memberA1.id,
+      })
+      .expect(201);
+
+    expect(res.body).toMatchObject({
+      name: 'Owner Member Direct Task',
+      teamId: fx.teamAId,
+      status: 'in_progress',
+      totalSteps: 1,
+      currentStepOrder: 1,
+      currentAssignee: { id: fx.memberA1.id },
+    });
+    expect(res.body.steps[0]).toMatchObject({
+      assignedUserId: fx.memberA1.id,
+      stepOrder: 1,
+      status: 'active',
+    });
+  });
+
+  it('rejects Owner 1 assigning to Team C / Org 2 with 400', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'Cross Org Team Task',
+        type: 'text',
+        teamId: fx.teamCId,
+      })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/target team not found/i);
+  });
+
+  it('rejects Owner 1 assigning to Manager C / Org 2 with 400', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'Cross Org Manager Task',
+        type: 'text',
+        targetManagerId: fx.managerC.id,
+      })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/target manager not found/i);
+  });
+
+  it('rejects Owner 1 assigning to Member C1 / Org 2 with 400', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'Cross Org Member Task',
+        type: 'text',
+        targetMemberId: fx.memberC1.id,
+      })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/target member not found/i);
+  });
+
+  it('rejects Owner specifying multiple targets together (teamId + targetManagerId) with 400', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'Multiple Targets Task',
+        type: 'text',
+        teamId: fx.teamAId,
+        targetManagerId: fx.managerA.id,
+      })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/must specify exactly one target/i);
+  });
+
+  it('rejects Owner specifying no targets with 400', async () => {
+    const res = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.owner1))
+      .send({
+        name: 'No Target Task',
+        type: 'text',
+      })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/must specify exactly one target/i);
   });
 
   it('rejects Member with 403 Forbidden', async () => {
@@ -268,25 +452,29 @@ describe('GET /api/tasks & GET /api/tasks/:id — Isolation Gates (§11)', () =>
   });
 });
 
-describe('POST /api/tasks/:id/forward — Step Progression & Write Authorization', () => {
-  let taskId: string;
+describe('POST /api/tasks/:id/forward — Sequential Forward, Peer Hand-Off & Deduplication', () => {
+  let task3StepId: string;
+  let memberA3: SeededUser;
 
   beforeEach(async () => {
+    memberA3 = await seedExtraMember(fx.managerA, fx.teamAId, 'A3');
+
+    // 3-step relay: Member A1 -> Member A2 -> Member A3
     const res = await http
       .post('/api/tasks')
       .set('Authorization', bearer(fx.managerA))
       .send({
-        name: 'Relay Workflow',
+        name: 'Relay Workflow 3-Step',
         type: 'text',
-        memberIds: [fx.memberA1.id, fx.memberA2.id],
+        memberIds: [fx.memberA1.id, fx.memberA2.id, memberA3.id],
       })
       .expect(201);
-    taskId = res.body.id;
+    task3StepId = res.body.id;
   });
 
-  it('allows active assignee (Member A1) to forward Step 1 -> advances to Step 2', async () => {
+  it('allows active assignee (Member A1) to sequentially forward Step 1 -> Step 2', async () => {
     const res = await http
-      .post(`/api/tasks/${taskId}/forward`)
+      .post(`/api/tasks/${task3StepId}/forward`)
       .set('Authorization', bearer(fx.memberA1))
       .expect(200);
 
@@ -301,19 +489,120 @@ describe('POST /api/tasks/:id/forward — Step Progression & Write Authorization
     expect(res.body.steps[1].startedAt).toBeTruthy();
   });
 
-  it('rejects Member A2 trying to forward while Step 1 is active (assigned to A1) with 403', async () => {
+  it('peer hand-off: active Member A1 hands off early to Member A3 (scheduled at Step 3) with deduplication', async () => {
     const res = await http
-      .post(`/api/tasks/${taskId}/forward`)
-      .set('Authorization', bearer(fx.memberA2))
-      .expect(403);
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(fx.memberA1))
+      .send({ targetUserId: memberA3.id })
+      .expect(200);
 
-    expect(res.body.message).toMatch(/only the member currently holding the active step/i);
+    expect(res.body.status).toBe('in_progress');
+    expect(res.body.completedSteps).toBe(1);
+    expect(res.body.totalSteps).toBe(3);
+    expect(res.body.currentStepOrder).toBe(2);
+    expect(res.body.currentAssignee.id).toBe(memberA3.id);
+
+    // Step 1: Member A1 completed
+    expect(res.body.steps[0]).toMatchObject({
+      stepOrder: 1,
+      assignedUserId: fx.memberA1.id,
+      status: 'completed',
+    });
+    // Step 2: Member A3 active (promoted from later step)
+    expect(res.body.steps[1]).toMatchObject({
+      stepOrder: 2,
+      assignedUserId: memberA3.id,
+      status: 'active',
+    });
+    expect(res.body.steps[1].startedAt).toBeTruthy();
+    // Step 3: Member A2 pending (shifted down from step 2)
+    expect(res.body.steps[2]).toMatchObject({
+      stepOrder: 3,
+      assignedUserId: fx.memberA2.id,
+      status: 'pending',
+    });
+
+    // Zero duplicate step 4 for A3
+    expect(res.body.steps).toHaveLength(3);
   });
 
-  it('rejects Manager A trying to forward a step assigned to a member with 403', async () => {
-    const res = await http
-      .post(`/api/tasks/${taskId}/forward`)
+  it('peer hand-off: active Member A1 hands off to a new teammate -> splices step', async () => {
+    // 2-step task: A1 -> A2
+    const taskRes = await http
+      .post('/api/tasks')
       .set('Authorization', bearer(fx.managerA))
+      .send({
+        name: '2-Step Task',
+        type: 'text',
+        memberIds: [fx.memberA1.id, fx.memberA2.id],
+      })
+      .expect(201);
+    const taskId = taskRes.body.id;
+
+    // Member A1 hands off to Member A3 (who was not in the original 2-step chain)
+    const handoffRes = await http
+      .post(`/api/tasks/${taskId}/forward`)
+      .set('Authorization', bearer(fx.memberA1))
+      .send({ targetUserId: memberA3.id })
+      .expect(200);
+
+    expect(handoffRes.body.totalSteps).toBe(3);
+    expect(handoffRes.body.completedSteps).toBe(1);
+    expect(handoffRes.body.currentStepOrder).toBe(2);
+    expect(handoffRes.body.currentAssignee.id).toBe(memberA3.id);
+
+    expect(handoffRes.body.steps[0]).toMatchObject({
+      stepOrder: 1,
+      assignedUserId: fx.memberA1.id,
+      status: 'completed',
+    });
+    expect(handoffRes.body.steps[1]).toMatchObject({
+      stepOrder: 2,
+      assignedUserId: memberA3.id,
+      status: 'active',
+    });
+    expect(handoffRes.body.steps[2]).toMatchObject({
+      stepOrder: 3,
+      assignedUserId: fx.memberA2.id,
+      status: 'pending',
+    });
+  });
+
+  it('rejects self hand-off (A1 -> A1) with 400 Bad Request', async () => {
+    const res = await http
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(fx.memberA1))
+      .send({ targetUserId: fx.memberA1.id })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/cannot hand off.*to yourself/i);
+  });
+
+  it('rejects Member A1 trying to hand off to Manager A with 400 Bad Request', async () => {
+    const res = await http
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(fx.memberA1))
+      .send({ targetUserId: fx.managerA.id })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/target user must be a member/i);
+  });
+
+  it('rejects cross-team hand-off (A1 -> B1) with 400 Bad Request', async () => {
+    const res = await http
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(fx.memberA1))
+      .send({ targetUserId: fx.memberB1.id })
+      .expect(400);
+
+    expect(res.body.message).toMatch(/target user is not in the same team/i);
+  });
+
+  it('rejects Member A2 trying to hand off while Step 1 is active with 403', async () => {
+    const res = await http
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(fx.memberA2))
+      .send({ targetUserId: memberA3.id })
       .expect(403);
 
     expect(res.body.message).toMatch(/only the member currently holding the active step/i);
@@ -321,41 +610,46 @@ describe('POST /api/tasks/:id/forward — Step Progression & Write Authorization
 
   it('rejects Member B1 (other team) trying to forward Task A with 404 (uniform @OwnedResource)', async () => {
     await http
-      .post(`/api/tasks/${taskId}/forward`)
+      .post(`/api/tasks/${task3StepId}/forward`)
       .set('Authorization', bearer(fx.memberB1))
       .expect(404);
   });
 
-  it('completes the entire task when the final step (Step 2) is forwarded', async () => {
+  it('completes the entire task when all steps are finished', async () => {
     // 1. Member A1 forwards Step 1
     await http
-      .post(`/api/tasks/${taskId}/forward`)
+      .post(`/api/tasks/${task3StepId}/forward`)
       .set('Authorization', bearer(fx.memberA1))
       .expect(200);
 
-    // 2. Member A2 forwards Step 2 (final step)
-    const finalRes = await http
-      .post(`/api/tasks/${taskId}/forward`)
+    // 2. Member A2 forwards Step 2
+    await http
+      .post(`/api/tasks/${task3StepId}/forward`)
       .set('Authorization', bearer(fx.memberA2))
       .expect(200);
 
+    // 3. Member A3 forwards Step 3 (final)
+    const finalRes = await http
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(memberA3))
+      .expect(200);
+
     expect(finalRes.body.status).toBe('completed');
-    expect(finalRes.body.completedSteps).toBe(2);
+    expect(finalRes.body.completedSteps).toBe(3);
     expect(finalRes.body.currentStepOrder).toBeNull();
     expect(finalRes.body.currentAssignee).toBeNull();
-    expect(finalRes.body.steps[1].status).toBe('completed');
-    expect(finalRes.body.steps[1].completedAt).toBeTruthy();
+    expect(finalRes.body.steps[2].status).toBe('completed');
 
-    // 3. Trying to forward again returns 409 Conflict
+    // 4. Trying to forward again returns 409 Conflict
     await http
-      .post(`/api/tasks/${taskId}/forward`)
-      .set('Authorization', bearer(fx.memberA2))
+      .post(`/api/tasks/${task3StepId}/forward`)
+      .set('Authorization', bearer(memberA3))
       .expect(409);
   });
 });
 
-describe('Concurrent Forward Race & Write-Auth Sabotage Test', () => {
-  it('concurrent forward race: only one forward succeeds, second fails cleanly', async () => {
+describe('Concurrent Forward Race & Audit Log Traceability', () => {
+  it('concurrent forward race: only one forward succeeds, second fails cleanly with 403', async () => {
     const res = await http
       .post('/api/tasks')
       .set('Authorization', bearer(fx.managerA))
@@ -401,5 +695,68 @@ describe('Concurrent Forward Race & Write-Auth Sabotage Test', () => {
     expect(verifyRes.body.currentStepOrder).toBe(2);
     expect(verifyRes.body.completedSteps).toBe(1);
     expect(verifyRes.body.currentAssignee.id).toBe(fx.memberA2.id);
+  });
+
+  it('records distinct audit_log events: task.created, task_step.forwarded, task_step.handed_off, task.completed', async () => {
+    const memberA3 = await seedExtraMember(fx.managerA, fx.teamAId, 'A3Audit');
+
+    // 1. Manager A creates task
+    const createRes = await http
+      .post('/api/tasks')
+      .set('Authorization', bearer(fx.managerA))
+      .send({
+        name: 'Audit Trace Task',
+        type: 'text',
+        memberIds: [fx.memberA1.id, fx.memberA2.id, memberA3.id],
+      })
+      .expect(201);
+    const taskId = createRes.body.id;
+
+    // 2. Member A1 peer hands off to Member A3
+    await http
+      .post(`/api/tasks/${taskId}/forward`)
+      .set('Authorization', bearer(fx.memberA1))
+      .send({ targetUserId: memberA3.id })
+      .expect(200);
+
+    // 3. Member A3 forwards sequentially to Member A2
+    await http
+      .post(`/api/tasks/${taskId}/forward`)
+      .set('Authorization', bearer(memberA3))
+      .expect(200);
+
+    // 4. Member A2 completes final step
+    await http
+      .post(`/api/tasks/${taskId}/forward`)
+      .set('Authorization', bearer(fx.memberA2))
+      .expect(200);
+
+    // 5. Query audit_log via Owner tenant context
+    const ownerCtx = ctxFor(fx.owner1);
+    await withTenant(ownerCtx, async (c) => {
+      const logs = await c.query<{ action: string; actor_user_id: string; target_id: string }>(
+        `SELECT action, actor_user_id, target_id FROM audit_log WHERE target_id = $1 ORDER BY created_at ASC`,
+        [taskId],
+      );
+
+      const actions = logs.rows.map((r) => r.action);
+      expect(actions).toContain('task.created');
+      expect(actions).toContain('task_step.handed_off');
+      expect(actions).toContain('task_step.forwarded');
+      expect(actions).toContain('task.completed');
+
+      // Verify actors recorded correctly
+      const creationLog = logs.rows.find((r) => r.action === 'task.created');
+      expect(creationLog?.actor_user_id).toBe(fx.managerA.id);
+
+      const handoffLog = logs.rows.find((r) => r.action === 'task_step.handed_off');
+      expect(handoffLog?.actor_user_id).toBe(fx.memberA1.id);
+
+      const forwardLog = logs.rows.find((r) => r.action === 'task_step.forwarded');
+      expect(forwardLog?.actor_user_id).toBe(memberA3.id);
+
+      const completeLog = logs.rows.find((r) => r.action === 'task.completed');
+      expect(completeLog?.actor_user_id).toBe(fx.memberA2.id);
+    });
   });
 });
