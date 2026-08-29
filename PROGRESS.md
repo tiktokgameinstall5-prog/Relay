@@ -127,6 +127,26 @@ provider's config management, not by hand.
 `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` and both role passwords were generated locally.
 Production needs freshly generated secrets from a secret manager, never carried over from dev.
 
+### 4. Attachment Virus & Anti-Malware Scanning Pipeline (CLAUDE.md §3)
+
+**Status:** open. **Blocks:** production launch. **Owner:** infrastructure / security review.
+
+CLAUDE.md §3 requires all uploaded file attachments and master video streams to be virus-scanned before becoming available for download or distribution. Currently, `LocalStorageDriver` / `StorageService` accepts binary buffers/streams, computes SHA-256 integrity checksums, validates MIME-types against an allowlist, and rejects executable extensions (`.exe`, `.dll`, `.sh`, `.bat`, etc.).
+
+**Required for production launch:**
+- Asynchronous anti-malware scanning pipeline (e.g., ClamAV daemon container, AWS GuardDuty / S3 Malware Scanning, or VirusTotal API integration).
+- Status flag on `task_attachment` (e.g. `scan_status: 'pending' | 'clean' | 'infected'`).
+- Immediate quarantine and deletion of any attachment flagged as infected, with an audit log security alert (`task_attachment.malware_detected`).
+- Block downloads while `scan_status === 'pending'`.
+
+### 5. Multer Streaming Spool vs In-Memory Storage Trade-off
+
+**Status:** documented trade-off. **Blocks:** high-volume / multi-gigabyte video uploads.
+
+- **Current design (Phase 3 dev/test)**: `FileInterceptor` with `MemoryStorage` buffers incoming upload chunks into a Node.js `Buffer` in RAM (capped at 100MB per file). This keeps the local test suites synchronous, dependency-free, and straightforward for SHA-256 calculation.
+- **Production trade-off**: Large raw master video uploads (e.g. 500MB–2GB raw footage) or heavy concurrent uploads can cause Node.js heap spikes or V8 memory pressure under default memory storage.
+- **Production path**: Replace `MemoryStorage` with `DiskStorage` pointing to a fast ephemeral NVMe scratch spool (`/tmp/relay-spool`), or stream directly via `busboy` / S3 Multipart upload without holding full file payloads in Node.js process RAM.
+
 ## Phase 2 write-authorization constraint (read before adding any member-writable route)
 
 **Status:** open by design, not a bug. **Found:** 2026-08-04, during `/security-review` of

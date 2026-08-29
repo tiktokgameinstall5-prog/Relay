@@ -24,6 +24,7 @@ export const OWNED_TABLES = {
   user: '"user"',
   task: 'task',
   task_step: 'task_step',
+  task_attachment: 'task_attachment',
 } as const;
 
 export type OwnedTable = keyof typeof OWNED_TABLES;

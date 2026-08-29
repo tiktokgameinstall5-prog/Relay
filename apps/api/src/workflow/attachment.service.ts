@@ -9,8 +9,54 @@ import {
 import type { PoolClient } from 'pg';
 import { DbService } from '../db/db.service';
 import type { CurrentUser } from '../db/tenant-context';
+import type { TaskType } from '../db/schema';
 import { StorageService } from '../storage/storage.service';
 import type { TaskAttachmentDto } from './dto/attachment.dto';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const BLOCKED_EXTENSIONS = /\.(exe|dll|bat|cmd|sh|ps1|vbs|js|scr|com|pif|app|jar|bin)$/i;
+const BLOCKED_MIME_TYPES = new Set([
+  'application/x-msdownload',
+  'application/x-executable',
+  'application/x-sh',
+  'application/x-bat',
+  'application/x-dosexec',
+  'application/javascript',
+  'text/javascript',
+]);
+
+function validateAttachmentMimeType(taskType: TaskType, fileName: string, mimeType: string) {
+  // Always reject executable and script formats
+  if (BLOCKED_EXTENSIONS.test(fileName) || BLOCKED_MIME_TYPES.has(mimeType.toLowerCase())) {
+    throw new BadRequestException('Executable and script files are not permitted as attachments');
+  }
+
+  const normalizedMime = mimeType.toLowerCase();
+
+  if (taskType === 'video') {
+    const isVideoMime =
+      normalizedMime.startsWith('video/') ||
+      normalizedMime === 'application/mp4' ||
+      normalizedMime === 'application/ogg' ||
+      normalizedMime === 'application/x-matroska';
+    if (!isVideoMime) {
+      throw new BadRequestException('Only video files can be attached to a video task');
+    }
+  } else if (taskType === 'text') {
+    const isTextMime =
+      normalizedMime.startsWith('text/') ||
+      normalizedMime === 'application/json' ||
+      normalizedMime === 'application/pdf' ||
+      normalizedMime === 'application/msword' ||
+      normalizedMime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      normalizedMime === 'application/rtf' ||
+      normalizedMime === 'application/xml';
+    if (!isTextMime) {
+      throw new BadRequestException('Only text and document files can be attached to a text task');
+    }
+  }
+}
 
 interface AttachmentDbRow {
   id: string;
@@ -41,14 +87,18 @@ export class AttachmentService {
     taskId: string,
     file?: { originalname: string; mimetype: string; size: number; buffer: Buffer },
   ): Promise<TaskAttachmentDto> {
+    if (!UUID_RE.test(taskId)) {
+      throw new NotFoundException();
+    }
+
     if (!file || !file.buffer) {
       throw new BadRequestException('File is required');
     }
 
     return this.db.tx(async (c) => {
       // 1. Task lookup under caller's tenant slice
-      const taskRes = await c.query<{ id: string; org_id: string; manager_id: string }>(
-        `SELECT id, org_id, manager_id FROM task WHERE id = $1`,
+      const taskRes = await c.query<{ id: string; org_id: string; manager_id: string; type: TaskType }>(
+        `SELECT id, org_id, manager_id, type FROM task WHERE id = $1`,
         [taskId],
       );
 
@@ -57,6 +107,9 @@ export class AttachmentService {
       }
 
       const task = taskRes.rows[0];
+
+      // Validate MIME type against task.type
+      validateAttachmentMimeType(task.type, file.originalname, file.mimetype || 'application/octet-stream');
 
       // 2. Put file into storage
       const storageKey = this.storage.generateKey(actor.orgId, taskId, file.originalname);
@@ -103,6 +156,10 @@ export class AttachmentService {
   }
 
   async listAttachments(actor: CurrentUser, taskId: string): Promise<TaskAttachmentDto[]> {
+    if (!UUID_RE.test(taskId)) {
+      throw new NotFoundException();
+    }
+
     return this.db.tx(async (c) => {
       const taskRes = await c.query<{ id: string }>(
         `SELECT id FROM task WHERE id = $1`,
@@ -127,6 +184,10 @@ export class AttachmentService {
     taskId: string,
     attachmentId: string,
   ): Promise<{ attachment: TaskAttachmentDto; buffer: Buffer }> {
+    if (!UUID_RE.test(taskId) || !UUID_RE.test(attachmentId)) {
+      throw new NotFoundException();
+    }
+
     return this.db.tx(async (c) => {
       const res = await c.query<AttachmentDbRow>(
         `SELECT * FROM task_attachment WHERE id = $1 AND task_id = $2`,
@@ -155,6 +216,10 @@ export class AttachmentService {
     taskId: string,
     attachmentId: string,
   ): Promise<void> {
+    if (!UUID_RE.test(taskId) || !UUID_RE.test(attachmentId)) {
+      throw new NotFoundException();
+    }
+
     return this.db.tx(async (c) => {
       const res = await c.query<AttachmentDbRow>(
         `SELECT * FROM task_attachment WHERE id = $1 AND task_id = $2`,

@@ -3,10 +3,12 @@
  *
  * Proves:
  *   1. Upload attachment (POST /api/tasks/:taskId/attachments).
- *   2. Lossless verification: Downloaded bytes are bit-for-bit identical with matching SHA-256 (CLAUDE.md §3).
- *   3. List attachments (GET /api/tasks/:taskId/attachments).
- *   4. Cross-tenant isolation: Manager A / Member A cannot see, upload, or download Manager B's task attachments (404).
- *   5. Deletion authorization: Member can delete own attachment, Manager can delete team attachment, Member cannot delete peer's attachment (403).
+ *   2. MIME-type validation & category matching (video tasks require video MIME, text tasks require doc/text, executables blocked).
+ *   3. Anti-oracle 404 behavior: malformed task/attachment IDs return 404 (never 400 or 500).
+ *   4. Lossless verification: Downloaded bytes are bit-for-bit identical with matching SHA-256 (CLAUDE.md §3).
+ *   5. List attachments (GET /api/tasks/:taskId/attachments).
+ *   6. Cross-tenant isolation: Manager A / Member A cannot see, upload, or download Manager B's task attachments (404).
+ *   7. Deletion authorization: Member can delete own attachment, Manager can delete team attachment, Member cannot delete peer's attachment (403).
  */
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -24,8 +26,8 @@ let app: INestApplication;
 let http: ReturnType<typeof request>;
 let fx: Fixture;
 
-let taskAId: string;
-let taskBId: string;
+let taskAId: string; // type: 'file'
+let taskBId: string; // type: 'video'
 
 async function seedTasks() {
   taskAId = randomUUID();
@@ -81,99 +83,159 @@ describe('Attachment HTTP Isolation & Lossless Delivery (Phase 3)', () => {
   let sampleSha256: string;
 
   beforeAll(() => {
-    // Generate 64KB pseudo-random binary payload simulating a raw master file / video chunk
     sampleBinaryPayload = randomBytes(64 * 1024);
     sampleSha256 = createHash('sha256').update(sampleBinaryPayload).digest('hex');
   });
 
-  it('Member A1 uploads a file to Task A -> 201 with metadata', async () => {
-    const res = await http
-      .post(`/api/tasks/${taskAId}/attachments`)
-      .set('Authorization', bearer(fx.memberA1))
-      .attach('file', sampleBinaryPayload, 'raw_video_master.mp4')
-      .expect(201);
+  describe('Anti-Oracle 404 ID Guards (@OwnedResource pattern)', () => {
+    it('malformed task ID returns uniform 404 Not Found', async () => {
+      await http
+        .get('/api/tasks/not-a-valid-uuid/attachments')
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(404);
 
-    expect(res.body).toMatchObject({
-      taskId: taskAId,
-      fileName: 'raw_video_master.mp4',
-      fileSize: sampleBinaryPayload.length,
-      mimeType: 'video/mp4',
-      checksumSha256: sampleSha256,
-      uploadedByUserId: fx.memberA1.id,
+      await http
+        .post('/api/tasks/not-a-valid-uuid/attachments')
+        .set('Authorization', bearer(fx.memberA1))
+        .attach('file', Buffer.from('data'), 'file.pdf')
+        .expect(404);
     });
-    expect(res.body.id).toBeDefined();
-    attachmentA1Id = res.body.id;
+
+    it('malformed attachment ID returns uniform 404 Not Found', async () => {
+      await http
+        .get(`/api/tasks/${taskAId}/attachments/not-a-valid-uuid/download`)
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(404);
+
+      await http
+        .delete(`/api/tasks/${taskAId}/attachments/not-a-valid-uuid`)
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(404);
+    });
   });
 
-  it('Lossless verification: Downloaded attachment is byte-identical (CLAUDE.md §3)', async () => {
-    const res = await http
-      .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
-      .set('Authorization', bearer(fx.memberA2))
-      .expect(200);
+  describe('MIME-Type & Category Allowlist Validation', () => {
+    it('rejects non-video attachment on a video task (400 Bad Request)', async () => {
+      const res = await http
+        .post(`/api/tasks/${taskBId}/attachments`)
+        .set('Authorization', bearer(fx.managerB))
+        .attach('file', Buffer.from('plain text'), 'notes.txt')
+        .expect(400);
 
-    const downloadedBuffer = Buffer.from(res.body);
-    const downloadedSha256 = createHash('sha256').update(downloadedBuffer).digest('hex');
+      expect(res.body.message).toMatch(/Only video files can be attached to a video task/);
+    });
 
-    expect(downloadedBuffer.length).toBe(sampleBinaryPayload.length);
-    expect(downloadedSha256).toBe(sampleSha256);
-    expect(downloadedBuffer.equals(sampleBinaryPayload)).toBe(true);
+    it('rejects executable attachments on file task (400 Bad Request)', async () => {
+      const res = await http
+        .post(`/api/tasks/${taskAId}/attachments`)
+        .set('Authorization', bearer(fx.memberA1))
+        .attach('file', Buffer.from('malicious binary'), 'payload.exe')
+        .expect(400);
+
+      expect(res.body.message).toMatch(/Executable and script files are not permitted/);
+    });
+
+    it('accepts video upload on video task (201 Created)', async () => {
+      const res = await http
+        .post(`/api/tasks/${taskBId}/attachments`)
+        .set('Authorization', bearer(fx.managerB))
+        .attach('file', sampleBinaryPayload, 'master_reel.mp4')
+        .expect(201);
+
+      expect(res.body.fileName).toBe('master_reel.mp4');
+      expect(res.body.mimeType).toBe('video/mp4');
+    });
   });
 
-  it('List attachments (GET /api/tasks/:taskId/attachments) returns attachment', async () => {
-    const res = await http
-      .get(`/api/tasks/${taskAId}/attachments`)
-      .set('Authorization', bearer(fx.managerA))
-      .expect(200);
+  describe('Upload, Download, Lossless Proof, and Isolation', () => {
+    it('Member A1 uploads a file to Task A -> 201 with metadata', async () => {
+      const res = await http
+        .post(`/api/tasks/${taskAId}/attachments`)
+        .set('Authorization', bearer(fx.memberA1))
+        .attach('file', sampleBinaryPayload, 'spec_doc.pdf')
+        .expect(201);
 
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body.length).toBeGreaterThanOrEqual(1);
-    expect(res.body[0].id).toBe(attachmentA1Id);
-  });
+      expect(res.body).toMatchObject({
+        taskId: taskAId,
+        fileName: 'spec_doc.pdf',
+        fileSize: sampleBinaryPayload.length,
+        checksumSha256: sampleSha256,
+        uploadedByUserId: fx.memberA1.id,
+      });
+      expect(res.body.id).toBeDefined();
+      attachmentA1Id = res.body.id;
+    });
 
-  it('Cross-Team Isolation: Manager B cannot list or download Task A attachments (404)', async () => {
-    await http
-      .get(`/api/tasks/${taskAId}/attachments`)
-      .set('Authorization', bearer(fx.managerB))
-      .expect(404);
+    it('Lossless verification: Downloaded attachment is byte-identical (CLAUDE.md §3)', async () => {
+      const res = await http
+        .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
+        .set('Authorization', bearer(fx.memberA2))
+        .expect(200);
 
-    await http
-      .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
-      .set('Authorization', bearer(fx.managerB))
-      .expect(404);
-  });
+      const downloadedBuffer = Buffer.from(res.body);
+      const downloadedSha256 = createHash('sha256').update(downloadedBuffer).digest('hex');
 
-  it('Cross-Tenant Isolation: Org 2 Manager C cannot access Task A attachments (404)', async () => {
-    await http
-      .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
-      .set('Authorization', bearer(fx.managerC))
-      .expect(404);
-  });
+      expect(downloadedBuffer.length).toBe(sampleBinaryPayload.length);
+      expect(downloadedSha256).toBe(sampleSha256);
+      expect(downloadedBuffer.equals(sampleBinaryPayload)).toBe(true);
+    });
 
-  it('Cross-Team Upload: Member B1 cannot upload to Task A (404)', async () => {
-    await http
-      .post(`/api/tasks/${taskAId}/attachments`)
-      .set('Authorization', bearer(fx.memberB1))
-      .attach('file', Buffer.from('test'), 'test.txt')
-      .expect(404);
-  });
+    it('List attachments (GET /api/tasks/:taskId/attachments) returns attachment', async () => {
+      const res = await http
+        .get(`/api/tasks/${taskAId}/attachments`)
+        .set('Authorization', bearer(fx.managerA))
+        .expect(200);
 
-  it('Member A2 cannot delete Member A1 uploaded attachment (403 Forbidden)', async () => {
-    await http
-      .delete(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}`)
-      .set('Authorization', bearer(fx.memberA2))
-      .expect(403);
-  });
+      expect(Array.isArray(res.body)).toBe(true);
+      expect(res.body.length).toBeGreaterThanOrEqual(1);
+      expect(res.body[0].id).toBe(attachmentA1Id);
+    });
 
-  it('Member A1 can delete own uploaded attachment (204 No Content)', async () => {
-    await http
-      .delete(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}`)
-      .set('Authorization', bearer(fx.memberA1))
-      .expect(204);
+    it('Cross-Team Isolation: Manager B cannot list or download Task A attachments (404)', async () => {
+      await http
+        .get(`/api/tasks/${taskAId}/attachments`)
+        .set('Authorization', bearer(fx.managerB))
+        .expect(404);
 
-    // Confirm it is gone
-    await http
-      .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
-      .set('Authorization', bearer(fx.memberA1))
-      .expect(404);
+      await http
+        .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
+        .set('Authorization', bearer(fx.managerB))
+        .expect(404);
+    });
+
+    it('Cross-Tenant Isolation: Org 2 Manager C cannot access Task A attachments (404)', async () => {
+      await http
+        .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
+        .set('Authorization', bearer(fx.managerC))
+        .expect(404);
+    });
+
+    it('Cross-Team Upload: Member B1 cannot upload to Task A (404)', async () => {
+      await http
+        .post(`/api/tasks/${taskAId}/attachments`)
+        .set('Authorization', bearer(fx.memberB1))
+        .attach('file', Buffer.from('test'), 'test.pdf')
+        .expect(404);
+    });
+
+    it('Member A2 cannot delete Member A1 uploaded attachment (403 Forbidden)', async () => {
+      await http
+        .delete(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}`)
+        .set('Authorization', bearer(fx.memberA2))
+        .expect(403);
+    });
+
+    it('Member A1 can delete own uploaded attachment (204 No Content)', async () => {
+      await http
+        .delete(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}`)
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(204);
+
+      // Confirm it is gone
+      await http
+        .get(`/api/tasks/${taskAId}/attachments/${attachmentA1Id}/download`)
+        .set('Authorization', bearer(fx.memberA1))
+        .expect(404);
+    });
   });
 });
