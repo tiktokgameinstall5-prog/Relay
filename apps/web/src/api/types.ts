@@ -177,3 +177,47 @@ export interface MemberRow {
   /** ISO 8601 — serialised from a Date over the wire. */
   createdAt: string;
 }
+
+/** Task workflow enums and types (CLAUDE.md §2) */
+export type TaskType = 'text' | 'video' | 'file';
+export type TaskStatus = 'scheduled' | 'in_progress' | 'completed';
+export type TaskStepStatus = 'pending' | 'active' | 'completed';
+
+export interface TaskAssignee {
+  id: string;
+  name: string;
+}
+
+export interface TaskStepResponse {
+  id: string;
+  stepOrder: number;
+  status: TaskStepStatus;
+  assignedUserId: string;
+  assignedUserName: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationSeconds: number | null;
+}
+
+export interface TaskResponse {
+  id: string;
+  teamId: string | null;
+  name: string;
+  type: TaskType;
+  description: string | null;
+  status: TaskStatus;
+  totalSteps: number;
+  completedSteps: number;
+  currentStepOrder: number | null;
+  currentAssignee: TaskAssignee | null;
+  createdAt: string;
+  updatedAt: string;
+  steps: TaskStepResponse[];
+}
+
+export interface CreateTaskInput {
+  name: string;
+  type: TaskType;
+  description?: string | undefined;
+  memberIds: string[];
+}

@@ -22,6 +22,7 @@ import { Overview } from './screens/Overview';
 import { Teams } from './screens/Teams';
 import { TeamDetail } from './screens/TeamDetail';
 import { MyTeam } from './screens/MyTeam';
+import { Tasks } from './screens/Tasks';
 import { Phase2Stub } from './screens/Phase2Stub';
 import type { UserRole } from './api/types';
 
@@ -87,16 +88,7 @@ export function App() {
                 </RequireRole>
               }
             />
-            <Route
-              path="/tasks"
-              element={
-                <Phase2Stub
-                  title="Task board"
-                  what="The relay chain: tasks split into ordered steps, one active at a time, with a live 'currently with X' indicator."
-                  task="Phase 2 — the workflow engine"
-                />
-              }
-            />
+            <Route path="/tasks" element={<Tasks />} />
             <Route
               path="/teams"
               element={

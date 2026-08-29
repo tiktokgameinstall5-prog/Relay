@@ -18,8 +18,10 @@
  */
 const VARIANTS = {
   active: { className: 'bg-active', label: 'Active' },
+  in_progress: { className: 'bg-active', label: 'In Progress' },
   completed: { className: 'bg-done', label: 'Completed' },
   pending: { className: 'bg-amber', label: 'Pending' },
+  scheduled: { className: 'bg-[#579bfc]', label: 'Scheduled' },
   inactive: { className: 'bg-[#C4C7D0]', label: 'Deactivated' },
 } as const;
 
