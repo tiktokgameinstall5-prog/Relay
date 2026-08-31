@@ -4,14 +4,16 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 4 — Scheduling & Notifications (Backend Complete & verified — Multi-tenant `notification` table with composite foreign keys, RLS isolation policies, `app_current_user_id()` session helper, `get_due_scheduled_tasks()` definer function, `NotificationService` batch creation + personal inbox query + anti-oracle 404 mark-read, `SchedulerService` tick processing with atomic compare-and-swap update `WHERE id = $2 AND status = 'scheduled'`, task creation `scheduledFor` future scheduling support $\le 365$ days, dual-layer tests [6 DB RLS + 6 HTTP isolation + 5 scheduling workflow tests = 17 tests], and full sabotage verification on RLS policy and CAS update).
+Phase 4 — Scheduling & Notifications (COMPLETE — Full-stack implementation verified and committed on `feat/phase4-scheduling-notifications`).
 
 **Backend & Isolation Gates:**
 - `Phase 4 Backend Suite`: **17 / 17 passed** (3 suites: `notification-rls.e2e-spec.ts` [6], `notification-isolation.e2e-spec.ts` [6], `scheduling-workflow.e2e-spec.ts` [5]).
-- `Sabotage Verification 1 (Notification RLS Policy)`: Mutate policy to drop `user_id = app_current_user_id()` check $\rightarrow$ RED (`Expected value: not "..."`, 2 failed); Revert $\rightarrow$ GREEN (6 passed).
-- `Sabotage Verification 2 (Scheduler Atomic CAS Update)`: Mutate `WHERE id = $2 AND status = 'scheduled'` to `WHERE id = $2` $\rightarrow$ RED (`Expected: false, Received: true` on already-activated task); Revert $\rightarrow$ GREEN (5 passed).
-- `test:isolation`: **166 / 166 passed** against isolated `relay_test` DB.
-- `test:web`: **17 / 17 passed** (2 suites: `AppShell.test.tsx`, `Tasks.test.tsx`).
+- `Sabotage Verification 1 (Notification RLS Policy)`: Mutated policy to drop `user_id = app_current_user_id()` check $\rightarrow$ RED (`Expected value: not "..."`, 2 failed); Revert $\rightarrow$ GREEN (6 passed).
+- `Sabotage Verification 2 (Scheduler Atomic CAS Update)`: Mutated `WHERE id = $2 AND status = 'scheduled'` to `WHERE id = $2` $\rightarrow$ RED (`Expected: false, Received: true` on already-activated task); Revert $\rightarrow$ GREEN (5 passed).
+- `test:isolation`: **178 / 178 passed** across all 8 suites (`rls`, `http-isolation`, `workflow-rls`, `workflow-isolation`, `attachment-rls`, `attachment-isolation`, `notification-rls`, `notification-isolation`).
+- `test:e2e`: **335 / 335 passed** across all 17 backend suites.
+- `test:web`: **26 / 26 passed** across all 3 frontend suites (`NotificationBell.test.tsx` [6], `AppShell.test.tsx` [5], `Tasks.test.tsx` [15]).
+- `web typecheck & build`: Clean (0 TypeScript errors, 1830 modules built in 1.88s).
 - **Database Architecture**: Development environment (`relay`) and automated test runner (`relay_test`) are fully decoupled into separate databases. Running automated test suites no longer truncates dev sandbox data.
 - **Development Tooling**: `npm --workspace apps/api run db:seed` provisions a rich, persistent testing sandbox with 1 Owner, 2 Teams, 2 Managers, 4 Members, and sample tasks across all formats (video/file/text) with active steps and binary attachments.
 - **Lossless Master Video Proof**: Verified (64KB raw binary payload upload + download asserts byte-for-byte identity and identical SHA-256 hash).
@@ -45,7 +47,15 @@ Phase 4 — Scheduling & Notifications (Backend Complete & verified — Multi-te
   - [x] lossless download & SHA-256 byte-for-byte roundtrip verified (CLAUDE.md §3)
   - [x] dual-layer attachment isolation tests (`attachment-rls.e2e-spec.ts`, `attachment-isolation.e2e-spec.ts`)
   - [x] web UI: file/video dropzone, video preview player, lossless download button, delete controls
-- [ ] Phase 4 — Scheduling & Notifications
+- [x] Phase 4 — Scheduling & Notifications
+  - [x] multi-tenant `notification` table with composite FKs & personal inbox RLS (`0008_notifications.sql`)
+  - [x] `get_due_scheduled_tasks()` definer lookup with pinned `search_path` and `relay_app` execution grant
+  - [x] `SchedulerService` tick processor with atomic idempotent CAS `WHERE id = $2 AND status = 'scheduled'`
+  - [x] `NotificationService` batch notification generation on step/task triggers & anti-oracle 404 mark-read
+  - [x] dual-layer tests: 6 DB RLS (`notification-rls.e2e-spec.ts`) + 6 HTTP isolation (`notification-isolation.e2e-spec.ts`) + 5 scheduling workflow tests (`scheduling-workflow.e2e-spec.ts`)
+  - [x] sabotage verification on both notification RLS policy and atomic scheduler CAS
+  - [x] frontend notification bell in `AppShell` with unread count badge, 30s background poll, and popover actions
+  - [x] frontend task scheduling toggle & datetime picker on `Tasks.tsx` with 365-day validation and `Scheduled` status chip
 - [ ] Phase 5 — Rankings & Reporter workflow, time-tracking analytics
 - [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)
 
