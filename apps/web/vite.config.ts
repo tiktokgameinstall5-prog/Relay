@@ -32,7 +32,7 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // Windows + npm workspace: thread pool starts reliably and quickly.
+    // Windows + npm workspace: pool: 'threads' + fileParallelism: false
     pool: 'threads',
     fileParallelism: false,
   },
