@@ -32,8 +32,10 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // Windows + npm workspace: pool: 'threads' + fileParallelism: false
-    pool: 'threads',
+    // Windows + npm workspace: pool: 'forks' + fileParallelism: false avoids thread worker handshake timeouts.
+    pool: 'forks',
     fileParallelism: false,
+    testTimeout: 30000,
+    hookTimeout: 30000,
   },
 });

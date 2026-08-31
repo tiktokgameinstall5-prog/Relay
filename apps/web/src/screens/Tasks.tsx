@@ -885,7 +885,7 @@ function CreateTaskModal({
                             <option value="">-- Choose member --</option>
                             {members.map((m) => (
                               <option key={m.id} value={m.id}>
-                                {m.name} ({m.email})
+                                {m.name} ({m.email}){m.pendingInvite ? ' — (Pending Invite)' : ''}
                               </option>
                             ))}
                           </select>
@@ -1051,6 +1051,11 @@ function CreateTaskModal({
                                 </span>
                                 <Avatar name={memberName} size={24} />
                                 <span className="font-medium text-ink">{memberName}</span>
+                                {m?.pendingInvite && (
+                                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                    Pending invite
+                                  </span>
+                                )}
                               </div>
                               <button
                                 type="button"
@@ -1096,7 +1101,12 @@ function CreateTaskModal({
                                 }`}
                               >
                                 <Plus size={12} className={isAlreadySelected ? 'text-faint' : 'text-active'} />
-                                {m.name}
+                                <span>{m.name}</span>
+                                {m.pendingInvite && (
+                                  <span className="rounded bg-amber-50 px-1 py-0.5 text-[10px] font-medium text-amber-700">
+                                    Pending
+                                  </span>
+                                )}
                               </button>
                             );
                           })}
