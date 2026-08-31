@@ -206,6 +206,7 @@ export interface TaskResponse {
   type: TaskType;
   description: string | null;
   status: TaskStatus;
+  scheduledFor: string | null;
   totalSteps: number;
   completedSteps: number;
   currentStepOrder: number | null;
@@ -219,6 +220,7 @@ export interface CreateTaskInput {
   name: string;
   type: TaskType;
   description?: string | undefined;
+  scheduledFor?: string | undefined;
   memberIds?: string[] | undefined;
   teamId?: string | undefined;
   targetManagerId?: string | undefined;
@@ -240,5 +242,31 @@ export interface TaskAttachment {
   createdAt: string;
   updatedAt: string;
 }
+
+export type NotificationType =
+  | 'task_assigned'
+  | 'step_activated'
+  | 'task_completed'
+  | 'task_scheduled_live'
+  | 'reporter_prompt';
+
+export interface NotificationResponse {
+  id: string;
+  orgId: string;
+  userId: string;
+  managerId: string | null;
+  type: NotificationType;
+  title: string;
+  body: string;
+  data: Record<string, unknown>;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface NotificationListResponse {
+  items: NotificationResponse[];
+  unreadCount: number;
+}
+
 
 

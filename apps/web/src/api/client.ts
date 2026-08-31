@@ -100,7 +100,7 @@ function messageFor(status: number, body: NestErrorBody | null): {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE';
+  method?: 'GET' | 'POST' | 'DELETE' | 'PATCH';
   body?: unknown;
   /**
    * Send the bearer token. Defaults to true — the public routes pass false so a

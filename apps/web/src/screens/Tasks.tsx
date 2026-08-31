@@ -13,6 +13,7 @@ import {
   ArrowRightLeft,
   CheckCircle2,
   ChevronDown,
+  Clock,
   Download,
   FileText,
   Film,
@@ -46,7 +47,6 @@ import type {
   TaskAttachment,
   TaskResponse,
   TaskType,
-  TeamListRow,
 } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
@@ -124,7 +124,7 @@ export function Tasks() {
 
       {actionError && (
         <div className="mt-4">
-          <Alert variant="error">{actionError}</Alert>
+          <Alert tone="error">{actionError}</Alert>
         </div>
       )}
 
@@ -302,7 +302,12 @@ function TaskCard({
         <div className="mt-4 rounded-lg bg-wash p-3">
           <div className="mb-1 flex items-center justify-between text-xs">
             <span className="text-muted font-medium">Relay sequence</span>
-            {task.currentAssignee ? (
+            {task.status === 'scheduled' ? (
+              <span className="text-[#579bfc] font-medium flex items-center gap-1">
+                <Clock size={12} />
+                {task.scheduledFor ? `Scheduled for: ${fmtDateTime(task.scheduledFor)}` : 'Scheduled for future'}
+              </span>
+            ) : task.currentAssignee ? (
               <span className="text-active font-medium">
                 Currently with: {task.currentAssignee.name}
               </span>
@@ -324,7 +329,6 @@ function TaskCard({
               {task.teamId && (
                 <Button
                   variant="secondary"
-                  size="sm"
                   onClick={handleToggleHandoff}
                   disabled={forwarding}
                   className="text-xs"
@@ -597,6 +601,10 @@ function CreateTaskModal({
   const [type, setType] = useState<TaskType>('text');
   const [description, setDescription] = useState('');
 
+  // Scheduling state
+  const [isScheduled, setIsScheduled] = useState(false);
+  const [scheduledFor, setScheduledFor] = useState('');
+
   // Owner target mode
   const [targetMode, setTargetMode] = useState<OwnerTargetMode>('team');
   const [selectedTeamId, setSelectedTeamId] = useState('');
@@ -623,7 +631,8 @@ function CreateTaskModal({
   });
 
   // Selected team's members
-  const activeTeamId = isOwner ? selectedTeamId : (orgDataState.data?.teams[0]?.id ?? '');
+  const orgData = orgDataState.status === 'ready' ? orgDataState.data : null;
+  const activeTeamId = isOwner ? selectedTeamId : (orgData?.teams[0]?.id ?? '');
   const { state: teamMembersState } = useAsync(
     async () => {
       if (!activeTeamId) return [];
@@ -634,13 +643,15 @@ function CreateTaskModal({
 
   // Set default selected team or manager once loaded
   useEffect(() => {
-    if (orgDataState.data?.teams && orgDataState.data.teams.length > 0 && !selectedTeamId) {
-      setSelectedTeamId(orgDataState.data.teams[0].id);
+    if (orgDataState.status === 'ready') {
+      if (orgDataState.data.teams.length > 0 && !selectedTeamId) {
+        setSelectedTeamId(orgDataState.data.teams[0]!.id);
+      }
+      if (orgDataState.data.managers.length > 0 && !selectedManagerId) {
+        setSelectedManagerId(orgDataState.data.managers[0]!.id);
+      }
     }
-    if (orgDataState.data?.managers && orgDataState.data.managers.length > 0 && !selectedManagerId) {
-      setSelectedManagerId(orgDataState.data.managers[0].id);
-    }
-  }, [orgDataState.data, selectedTeamId, selectedManagerId]);
+  }, [orgDataState, selectedTeamId, selectedManagerId]);
 
   function handleAddMemberToRelay(memberId: string) {
     if (selectedMemberIds.includes(memberId)) return;
@@ -660,6 +671,29 @@ function CreateTaskModal({
       return;
     }
 
+    if (isScheduled) {
+      if (!scheduledFor) {
+        setError('Please select a scheduled date and time.');
+        return;
+      }
+      const scheduledDate = new Date(scheduledFor);
+      if (isNaN(scheduledDate.getTime())) {
+        setError('Invalid scheduled date format.');
+        return;
+      }
+      if (scheduledDate.getTime() <= Date.now()) {
+        setError('Scheduled date must be in the future.');
+        return;
+      }
+      const maxDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
+      if (scheduledDate.getTime() > maxDate.getTime()) {
+        setError('Scheduled date cannot be more than 365 days in the future.');
+        return;
+      }
+    }
+
+    const scheduledIso = isScheduled && scheduledFor ? new Date(scheduledFor).toISOString() : undefined;
+
     setSubmitting(true);
     try {
       if (isOwner) {
@@ -673,6 +707,7 @@ function CreateTaskModal({
             name: name.trim(),
             type,
             description: description.trim() ? description.trim() : undefined,
+            scheduledFor: scheduledIso,
             teamId: selectedTeamId,
             memberIds: selectedMemberIds.length > 0 ? selectedMemberIds : undefined,
           });
@@ -686,6 +721,7 @@ function CreateTaskModal({
             name: name.trim(),
             type,
             description: description.trim() ? description.trim() : undefined,
+            scheduledFor: scheduledIso,
             targetManagerId: selectedManagerId,
           });
         } else if (targetMode === 'member') {
@@ -698,6 +734,7 @@ function CreateTaskModal({
             name: name.trim(),
             type,
             description: description.trim() ? description.trim() : undefined,
+            scheduledFor: scheduledIso,
             targetMemberId: selectedMemberId,
           });
         }
@@ -712,6 +749,7 @@ function CreateTaskModal({
           name: name.trim(),
           type,
           description: description.trim() ? description.trim() : undefined,
+          scheduledFor: scheduledIso,
           memberIds: selectedMemberIds,
         });
       }
@@ -729,8 +767,8 @@ function CreateTaskModal({
 
   return (
     <ModalShell title={isOwner ? 'Assign task (Owner)' : 'Assign new task relay'} onClose={onClose}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {error && <Alert variant="error">{error}</Alert>}
+      <form onSubmit={handleSubmit} noValidate className="space-y-4">
+        {error && <Alert tone="error">{error}</Alert>}
 
         {/* Owner Target Mode Selector */}
         {isOwner && (
@@ -909,6 +947,73 @@ function CreateTaskModal({
             placeholder="Brief notes or instructions for the assignee..."
             className="focus:ring-signal w-full rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:ring-2"
           />
+        </div>
+
+        {/* Scheduling Toggle & Picker */}
+        <div className="rounded-lg border border-hairline bg-slate-50/70 p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock size={16} className={isScheduled ? 'text-active' : 'text-muted'} />
+              <div>
+                <div className="text-xs font-semibold text-ink">Schedule for later</div>
+                <div className="text-[11px] text-muted">
+                  Task starts automatically at the designated date & time.
+                </div>
+              </div>
+            </div>
+            <label className="relative inline-flex cursor-pointer items-center">
+              <input
+                type="checkbox"
+                aria-label="Schedule task for later"
+                data-testid="schedule-toggle"
+                checked={isScheduled}
+                onChange={(e) => {
+                  setIsScheduled(e.target.checked);
+                  if (e.target.checked && !scheduledFor) {
+                    const tomorrow = new Date();
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    tomorrow.setHours(9, 0, 0, 0);
+                    const tzOffset = tomorrow.getTimezoneOffset() * 60000;
+                    const localISOTime = new Date(tomorrow.getTime() - tzOffset)
+                      .toISOString()
+                      .slice(0, 16);
+                    setScheduledFor(localISOTime);
+                  }
+                }}
+                className="peer sr-only"
+              />
+              <div className="peer h-5 w-9 rounded-full bg-slate-200 after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-active peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none" />
+            </label>
+          </div>
+
+          {isScheduled && (
+            <div className="mt-3 border-t border-hairline pt-3">
+              <label htmlFor="scheduled-datetime-input" className="mb-1 block text-xs font-medium text-muted">
+                Activation Date & Time
+              </label>
+              <input
+                id="scheduled-datetime-input"
+                type="datetime-local"
+                aria-label="Activation Date & Time"
+                data-testid="scheduled-datetime-input"
+                value={scheduledFor}
+                min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+                  .toISOString()
+                  .slice(0, 16)}
+                max={new Date(
+                  Date.now() + 365 * 24 * 60 * 60 * 1000 - new Date().getTimezoneOffset() * 60000,
+                )
+                  .toISOString()
+                  .slice(0, 16)}
+                onChange={(e) => setScheduledFor(e.target.value)}
+                className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink outline-none focus:border-active focus:ring-1 focus:ring-active"
+                required={isScheduled}
+              />
+              <p className="mt-1 text-[11px] text-faint">
+                Task status will remain <strong>Scheduled</strong> and step 1 will stay <strong>Pending</strong> until this time.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Relay Sequence Picker (for Manager or Owner -> Team mode) */}

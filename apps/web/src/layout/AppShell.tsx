@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { Avatar } from '../components/Avatar';
+import { NotificationBell } from '../components/NotificationBell';
 import type { UserRole } from '../api/types';
 
 interface NavItem {
@@ -126,6 +127,7 @@ export function AppShell() {
             <div className="truncate text-[13px] font-medium text-white">{user.name}</div>
             <div className="truncate text-[11px] text-[#7B8098] capitalize">{user.role}</div>
           </div>
+          <NotificationBell />
           <button
             type="button"
             onClick={signOut}
@@ -145,6 +147,7 @@ export function AppShell() {
             <Layers size={15} color="white" />
           </div>
           <span className="font-display flex-1 text-[15px] font-bold">Relay</span>
+          <NotificationBell />
           <Avatar name={user.name} size={26} />
           <button
             type="button"

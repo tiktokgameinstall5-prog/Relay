@@ -2,7 +2,7 @@
  * Component tests for the Tasks and Relay workflow screen (CLAUDE.md §2, §9).
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Tasks } from './Tasks';
@@ -57,6 +57,7 @@ const mockTaskInProgress: TaskResponse = {
   type: 'video',
   description: 'Produce launch video clip',
   status: 'in_progress',
+  scheduledFor: null,
   totalSteps: 2,
   completedSteps: 0,
   currentStepOrder: 1,
@@ -579,4 +580,197 @@ describe('Tasks Screen', () => {
 
     expect(mockedWorkflow.deleteAttachment).toHaveBeenCalledWith('task-1', 'att-1');
   });
+
+  it('renders scheduled task with Scheduled status chip and clock indicator', async () => {
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    const futureDate = new Date(Date.now() + 86400000).toISOString();
+    const mockScheduledTask: TaskResponse = {
+      ...mockTaskInProgress,
+      id: 'task-scheduled-1',
+      name: 'Future Scheduled Release',
+      status: 'scheduled',
+      scheduledFor: futureDate,
+      currentAssignee: null,
+      steps: [
+        {
+          id: 'step-1',
+          stepOrder: 1,
+          status: 'pending',
+          assignedUserId: 'u-member-1',
+          assignedUserName: 'Bob Member',
+          startedAt: null,
+          completedAt: null,
+          durationSeconds: null,
+        },
+      ],
+    };
+    mockedWorkflow.listTasks.mockResolvedValue([mockScheduledTask]);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText('Future Scheduled Release')).toBeInTheDocument();
+    expect(screen.getByText('Scheduled')).toBeInTheDocument();
+    expect(screen.getByText(/scheduled for:/i)).toBeInTheDocument();
+  });
+
+  it('allows Manager to toggle Schedule for later, pick datetime, and submit scheduled task', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([]);
+    mockedAuth.listTeams.mockResolvedValue([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        managerId: 'm1',
+        managerName: 'Manager Alice',
+        managerEmail: 'alice@relay.test',
+        memberCount: 1,
+        pendingInviteCount: 0,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedAuth.listTeamMembers.mockResolvedValue([
+      {
+        id: 'u-member-1',
+        name: 'Bob Member',
+        email: 'bob@relay.test',
+        role: 'member',
+        status: 'active',
+        pendingInvite: false,
+        teamId: 'team-1',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedWorkflow.createTask.mockResolvedValue(mockTaskInProgress);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const assignBtn = await screen.findByRole('button', { name: /^assign task$/i });
+    await user.click(assignBtn);
+
+    const nameInput = screen.getByPlaceholderText(/brand launch video/i);
+    await user.type(nameInput, 'Scheduled Sprint Kickoff');
+
+    // Add Bob to relay
+    const addBobBtn = await screen.findByRole('button', { name: /bob member/i });
+    await user.click(addBobBtn);
+
+    // Toggle Schedule for later
+    const scheduleToggle = screen.getByTestId('schedule-toggle');
+    await user.click(scheduleToggle);
+
+    // Enter a valid future datetime (e.g. 5 days from now)
+    const futureDate = new Date(Date.now() + 5 * 86400000);
+    const dateStr = futureDate.toISOString().slice(0, 16);
+    const dateInput = screen.getByTestId('scheduled-datetime-input');
+    await user.clear(dateInput);
+    await user.type(dateInput, dateStr);
+
+    const submitBtn = screen.getByRole('button', { name: /create relay task/i });
+    await user.click(submitBtn);
+
+    expect(mockedWorkflow.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Scheduled Sprint Kickoff',
+        scheduledFor: expect.any(String),
+        memberIds: ['u-member-1'],
+      }),
+    );
+  });
+
+  it('validates scheduled datetime: rejects past date and > 365 days future date with error banner', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([]);
+    mockedAuth.listTeams.mockResolvedValue([
+      {
+        id: 'team-1',
+        name: 'Alpha Team',
+        managerId: 'm1',
+        managerName: 'Manager Alice',
+        managerEmail: 'alice@relay.test',
+        memberCount: 1,
+        pendingInviteCount: 0,
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+    mockedAuth.listTeamMembers.mockResolvedValue([
+      {
+        id: 'u-member-1',
+        name: 'Bob Member',
+        email: 'bob@relay.test',
+        role: 'member',
+        status: 'active',
+        pendingInvite: false,
+        teamId: 'team-1',
+        createdAt: new Date().toISOString(),
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const assignBtn = await screen.findByRole('button', { name: /^assign task$/i });
+    await user.click(assignBtn);
+
+    const nameInput = screen.getByPlaceholderText(/brand launch video/i);
+    await user.type(nameInput, 'Invalid Date Task');
+
+    const addBobBtn = await screen.findByRole('button', { name: /bob member/i });
+    await user.click(addBobBtn);
+
+    // Toggle Schedule for later
+    const scheduleToggle = screen.getByTestId('schedule-toggle');
+    await user.click(scheduleToggle);
+
+    // Try a date in the past
+    const pastDate = new Date(Date.now() - 86400000).toISOString().slice(0, 16);
+    const dateInput = screen.getByTestId('scheduled-datetime-input');
+    await user.clear(dateInput);
+    await user.type(dateInput, pastDate);
+
+    const submitBtn = screen.getByRole('button', { name: /create relay task/i });
+    await user.click(submitBtn);
+
+    expect(await screen.findByText('Scheduled date must be in the future.')).toBeInTheDocument();
+    expect(mockedWorkflow.createTask).not.toHaveBeenCalled();
+
+    // Try a date > 365 days in future
+    const tooFarDate = new Date(Date.now() + 400 * 86400000).toISOString().slice(0, 16);
+    await user.clear(dateInput);
+    await user.type(dateInput, tooFarDate);
+    await user.click(submitBtn);
+
+    expect(
+      await screen.findByText('Scheduled date cannot be more than 365 days in the future.'),
+    ).toBeInTheDocument();
+    expect(mockedWorkflow.createTask).not.toHaveBeenCalled();
+  });
 });
+
