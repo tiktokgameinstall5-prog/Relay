@@ -6,8 +6,10 @@ import { TaskController } from './task.controller';
 import { AttachmentService } from './attachment.service';
 import { AttachmentController } from './attachment.controller';
 
+import { NotificationModule } from '../notifications/notification.module';
+
 @Module({
-  imports: [DbModule, StorageModule],
+  imports: [DbModule, StorageModule, NotificationModule],
   controllers: [TaskController, AttachmentController],
   providers: [WorkflowService, AttachmentService],
   exports: [WorkflowService, AttachmentService],

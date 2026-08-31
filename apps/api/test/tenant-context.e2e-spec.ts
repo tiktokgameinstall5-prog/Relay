@@ -70,6 +70,7 @@ describe('scope establishment', () => {
       orgId: fx.org1Id,
       role: 'manager',
       managerId: fx.managerA.id,
+      userId: fx.managerA.id,
     });
   });
 
@@ -86,6 +87,7 @@ describe('scope establishment', () => {
       orgId: fx.org1Id,
       role: 'owner',
       managerId: null,
+      userId: fx.owner1.id,
     });
   });
 

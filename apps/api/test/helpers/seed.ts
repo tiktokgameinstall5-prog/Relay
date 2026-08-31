@@ -60,7 +60,7 @@ export interface Fixture {
 
 /** Tenant context for a seeded user, as the interceptor would build it. */
 export function ctxFor(u: SeededUser): TenantContext {
-  return { orgId: u.orgId, role: u.role, managerId: u.managerId };
+  return { orgId: u.orgId, role: u.role, managerId: u.managerId, userId: u.id };
 }
 
 interface OrgSeed {

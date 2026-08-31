@@ -48,9 +48,28 @@ interface StepDbRow {
   completed_at: Date | null;
 }
 
+import { NotificationService, CreateNotificationInput } from '../notifications/notification.service';
+
 @Injectable()
 export class WorkflowService {
-  constructor(@Inject(DbService) private readonly db: DbService) {}
+  constructor(
+    @Inject(DbService) private readonly db: DbService,
+    @Inject(NotificationService)
+    private readonly notificationService: NotificationService,
+  ) {}
+
+  private parseAndValidateScheduledFor(scheduledFor?: string): Date | null {
+    if (!scheduledFor) return null;
+    const parsed = new Date(scheduledFor);
+    if (isNaN(parsed.getTime())) {
+      throw new BadRequestException('scheduledFor must be a valid ISO-8601 date string');
+    }
+    const maxFuture = new Date(Date.now() + 365 * 86400 * 1000);
+    if (parsed.getTime() > maxFuture.getTime()) {
+      throw new BadRequestException('scheduledFor cannot be more than 365 days into the future');
+    }
+    return parsed;
+  }
 
   /**
    * Manager assigns an ordered relay to their own team (CLAUDE.md §2).
@@ -72,6 +91,10 @@ export class WorkflowService {
       );
     }
 
+    const scheduledDate = this.parseAndValidateScheduledFor(dto.scheduledFor);
+    const isScheduled = scheduledDate !== null && scheduledDate.getTime() > Date.now();
+    const taskStatus: TaskStatus = isScheduled ? 'scheduled' : 'in_progress';
+
     return await this.db.tx(async (c) => {
       // 1. Resolve manager's active team
       const teamRes = await c.query<{ id: string }>(
@@ -84,8 +107,8 @@ export class WorkflowService {
       const teamId = teamRes.rows[0].id;
 
       // 2. Validate memberIds: deduplicated count must match memberIds found in this team
-      const membersRes = await c.query<{ id: string }>(
-        `SELECT id FROM "user"
+      const membersRes = await c.query<{ id: string; email: string; name: string }>(
+        `SELECT id, email, name FROM "user"
           WHERE team_id = $1 AND status = 'active' AND id = ANY($2::uuid[])`,
         [teamId, memberIds],
       );
@@ -100,8 +123,8 @@ export class WorkflowService {
       const now = new Date();
       await c.query(
         `INSERT INTO task (
-           id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'in_progress', $9, $9)`,
+           id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, scheduled_for, created_at, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
         [
           taskId,
           actor.orgId,
@@ -111,15 +134,20 @@ export class WorkflowService {
           dto.type,
           dto.description ?? null,
           actor.userId,
+          taskStatus,
+          scheduledDate,
           now,
         ],
       );
 
       // 4. Insert ordered task steps
+      const createdStepIds: string[] = [];
       for (let i = 0; i < memberIds.length; i++) {
         const memberId = memberIds[i];
         const stepId = randomUUID();
+        createdStepIds.push(stepId);
         const isFirst = i === 0;
+        const stepStatus: TaskStepStatus = !isScheduled && isFirst ? 'active' : 'pending';
         await c.query(
           `INSERT INTO task_step (
              id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
@@ -131,20 +159,53 @@ export class WorkflowService {
             taskId,
             memberId,
             i + 1,
-            isFirst ? 'active' : 'pending',
-            isFirst ? now : null,
+            stepStatus,
+            !isScheduled && isFirst ? now : null,
             now,
           ],
         );
       }
 
-      // 5. Audit log write (fire-and-forget, no RETURNING)
+      // 5. In-app notifications (if task is immediate)
+      if (!isScheduled) {
+        const notifs: CreateNotificationInput[] = [];
+        const firstMember = membersRes.rows.find((m) => m.id === memberIds[0]);
+        notifs.push({
+          orgId: actor.orgId,
+          userId: memberIds[0],
+          managerId: actor.userId,
+          type: 'step_activated',
+          title: `Task assigned: ${dto.name}`,
+          body: `Step 1 is now with you. Please begin working on ${dto.name}.`,
+          data: { taskId, stepId: createdStepIds[0], stepOrder: 1 },
+          emailTo: firstMember?.email,
+          emailSubject: `Task assigned: ${dto.name}`,
+          emailBody: `Hi ${firstMember?.name},\n\nStep 1 of "${dto.name}" has been assigned to you.`,
+        });
+
+        for (let i = 1; i < memberIds.length; i++) {
+          const mem = membersRes.rows.find((m) => m.id === memberIds[i]);
+          notifs.push({
+            orgId: actor.orgId,
+            userId: memberIds[i],
+            managerId: actor.userId,
+            type: 'task_assigned',
+            title: `New team task: ${dto.name}`,
+            body: `You are assigned to Step ${i + 1} of ${dto.name}.`,
+            data: { taskId, stepId: createdStepIds[i], stepOrder: i + 1 },
+          });
+        }
+        await this.notificationService.createNotifications(c, notifs);
+      }
+
+      // 6. Audit log write (fire-and-forget, no RETURNING)
       await this.writeAuditLog(c, actor, 'task.created', taskId, {
         name: dto.name,
         type: dto.type,
         totalSteps: memberIds.length,
         managerId: actor.userId,
         teamId,
+        scheduledFor: scheduledDate ? scheduledDate.toISOString() : null,
       });
 
       return await this.fetchTaskById(c, taskId);
@@ -538,12 +599,39 @@ export class WorkflowService {
         );
 
         if (nextStepRes.rows.length > 0) {
+          const nextStepId = nextStepRes.rows[0].id;
           await c.query(
             `UPDATE task_step
                 SET status = 'active', started_at = $1, updated_at = $1
               WHERE id = $2`,
-            [now, nextStepRes.rows[0].id],
+            [now, nextStepId],
           );
+
+          // Notify next step assignee
+          const nextAssigneeRes = await c.query<{ assigned_user_id: string; assigned_email: string; assigned_name: string; task_name: string }>(
+            `SELECT s.assigned_user_id, u.email as assigned_email, u.name as assigned_name, t.name as task_name
+               FROM task_step s
+               JOIN "user" u ON u.id = s.assigned_user_id
+               JOIN task t ON t.id = s.task_id
+              WHERE s.id = $1`,
+            [nextStepId],
+          );
+          if (nextAssigneeRes.rows.length > 0) {
+            const row = nextAssigneeRes.rows[0];
+            await this.notificationService.createNotifications(c, [{
+              orgId: actor.orgId,
+              userId: row.assigned_user_id,
+              managerId: task.manager_id,
+              type: 'step_activated',
+              title: `Step forwarded to you: ${row.task_name}`,
+              body: `Step ${completedStepOrder + 1} is now with you. Please continue the relay.`,
+              data: { taskId, stepId: nextStepId, stepOrder: completedStepOrder + 1 },
+              emailTo: row.assigned_email,
+              emailSubject: `Step forwarded to you: ${row.task_name}`,
+              emailBody: `Hi ${row.assigned_name},\n\nStep ${completedStepOrder + 1} of "${row.task_name}" has been forwarded to you.`,
+            }]);
+          }
+
           await this.writeAuditLog(c, actor, 'task_step.forwarded', taskId, {
             completedStepOrder,
             nextStepOrder: completedStepOrder + 1,
@@ -556,6 +644,36 @@ export class WorkflowService {
               WHERE id = $2`,
             [now, taskId],
           );
+
+          // Gather notifications for team, manager, and owner
+          const taskDetailRes = await c.query<{ name: string }>(`SELECT name FROM task WHERE id = $1`, [taskId]);
+          const taskName = taskDetailRes.rows[0]?.name ?? 'Task';
+
+          const teamMembers = await c.query<{ id: string }>(
+            `SELECT id FROM "user" WHERE org_id = $1 AND (manager_id = $2 OR id = $2) AND status = 'active'`,
+            [actor.orgId, task.manager_id],
+          );
+          const owners = await c.query<{ id: string }>(
+            `SELECT id FROM "user" WHERE org_id = $1 AND role = 'owner' AND status = 'active'`,
+            [actor.orgId],
+          );
+
+          const recipientIds = new Set<string>();
+          teamMembers.rows.forEach((m) => recipientIds.add(m.id));
+          owners.rows.forEach((o) => recipientIds.add(o.id));
+
+          const completionNotifs = Array.from(recipientIds).map((userId) => ({
+            orgId: actor.orgId,
+            userId,
+            managerId: task.manager_id,
+            type: 'task_completed' as const,
+            title: `Task completed: ${taskName}`,
+            body: `All steps for ${taskName} have been completed successfully.`,
+            data: { taskId },
+          }));
+
+          await this.notificationService.createNotifications(c, completionNotifs);
+
           await this.writeAuditLog(c, actor, 'task.completed', taskId, {
             completedStepOrder,
           });

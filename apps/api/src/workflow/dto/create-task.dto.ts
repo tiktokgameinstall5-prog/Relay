@@ -80,4 +80,12 @@ export class CreateTaskDto {
   @IsOptional()
   @IsUUID('4')
   targetMemberId?: string;
+
+  @ApiPropertyOptional({
+    description: 'ISO-8601 UTC timestamp when the task should become active (up to 365 days in future).',
+    example: '2026-09-01T10:00:00.000Z',
+  })
+  @IsOptional()
+  @IsString()
+  scheduledFor?: string;
 }

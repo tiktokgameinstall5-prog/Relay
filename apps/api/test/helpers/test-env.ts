@@ -22,3 +22,11 @@
  * throttle at its real default of 5 and asserts the 6th attempt is refused.
  */
 process.env.SIGNUP_THROTTLE_LIMIT = '1000000';
+
+// Ensure test runner always targets the dedicated relay_test database
+if (process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = process.env.DATABASE_URL.replace(/\/relay(\?.*)?$/, '/relay_test$1');
+}
+if (process.env.MIGRATION_DATABASE_URL) {
+  process.env.MIGRATION_DATABASE_URL = process.env.MIGRATION_DATABASE_URL.replace(/\/relay(\?.*)?$/, '/relay_test$1');
+}

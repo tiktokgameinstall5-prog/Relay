@@ -479,10 +479,10 @@ describe('the SECURITY DEFINER lookups did not become a general bypass', () => {
     }
   });
 
-  it('exposes exactly two SECURITY DEFINER functions, both with a pinned search_path', async () => {
+  it('exposes exactly three SECURITY DEFINER functions, all with a pinned search_path', async () => {
     // An unpinned search_path on a SECURITY DEFINER function is the classic
     // Postgres privilege-escalation vector. Asserting the count as well as the
-    // config means a third definer function cannot be added unnoticed.
+    // config means a fourth definer function cannot be added unnoticed.
     const { rows } = await appPool.query<{ proname: string; proconfig: string[] | null }>(
       `SELECT p.proname, p.proconfig
          FROM pg_proc p
@@ -494,6 +494,7 @@ describe('the SECURITY DEFINER lookups did not become a general bypass', () => {
     expect(rows.map((r) => r.proname)).toEqual([
       'auth_lookup_by_email',
       'auth_lookup_by_id',
+      'get_due_scheduled_tasks',
     ]);
     for (const r of rows) {
       expect(r.proconfig?.join(',') ?? '').toContain('search_path=');

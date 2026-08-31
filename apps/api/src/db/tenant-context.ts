@@ -18,6 +18,11 @@ export interface TenantContext {
    * their manager's id for a member. One uniform RLS predicate, no CASE on role.
    */
   managerId: string | null;
+  /**
+   * The caller's own user id (null/undefined when not applicable).
+   * Required for notification RLS user-isolation policy.
+   */
+  userId?: string | null;
 }
 
 /**
@@ -30,5 +35,5 @@ export interface CurrentUser extends TenantContext {
 }
 
 export function tenantContextOf(user: CurrentUser): TenantContext {
-  return { orgId: user.orgId, role: user.role, managerId: user.managerId };
+  return { orgId: user.orgId, role: user.role, managerId: user.managerId, userId: user.userId };
 }

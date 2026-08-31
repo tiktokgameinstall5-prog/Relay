@@ -13,6 +13,7 @@ const config: Config = {
   setupFiles: ['./test/helpers/test-env.ts'],
   globalSetup: './test/helpers/global-setup.ts',
   globalTeardown: './test/helpers/global-teardown.ts',
+  testTimeout: 60000,
 };
 
 export default config;

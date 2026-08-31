@@ -4,12 +4,16 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 3 — Content & Attachments (Complete & verified — Multi-tenant `task_attachment` table with composite foreign keys, RLS isolation policy, zero-reencoding lossless streaming delivery with SHA-256 integrity verification, storage abstraction layer [`LocalStorageDriver` with recursive directory creation and path traversal sanitization], dual-layer isolation gates [6 DB-layer + 8 HTTP-layer tests], frontend attachment upload dropzone, video preview player, lossless download link, deletion permissions, and 17 component tests).
+Phase 4 — Scheduling & Notifications (Backend Complete & verified — Multi-tenant `notification` table with composite foreign keys, RLS isolation policies, `app_current_user_id()` session helper, `get_due_scheduled_tasks()` definer function, `NotificationService` batch creation + personal inbox query + anti-oracle 404 mark-read, `SchedulerService` tick processing with atomic compare-and-swap update `WHERE id = $2 AND status = 'scheduled'`, task creation `scheduledFor` future scheduling support $\le 365$ days, dual-layer tests [6 DB RLS + 6 HTTP isolation + 5 scheduling workflow tests = 17 tests], and full sabotage verification on RLS policy and CAS update).
 
 **Backend & Isolation Gates:**
-- `test:isolation`: **161 / 161 passed** (6 suites: `rls`, `http-isolation`, `session-refresh`, `workflow-isolation`, `attachment-rls`, `attachment-isolation`).
-- `test:e2e`: **286+ passed** across all backend test suites.
+- `Phase 4 Backend Suite`: **17 / 17 passed** (3 suites: `notification-rls.e2e-spec.ts` [6], `notification-isolation.e2e-spec.ts` [6], `scheduling-workflow.e2e-spec.ts` [5]).
+- `Sabotage Verification 1 (Notification RLS Policy)`: Mutate policy to drop `user_id = app_current_user_id()` check $\rightarrow$ RED (`Expected value: not "..."`, 2 failed); Revert $\rightarrow$ GREEN (6 passed).
+- `Sabotage Verification 2 (Scheduler Atomic CAS Update)`: Mutate `WHERE id = $2 AND status = 'scheduled'` to `WHERE id = $2` $\rightarrow$ RED (`Expected: false, Received: true` on already-activated task); Revert $\rightarrow$ GREEN (5 passed).
+- `test:isolation`: **166 / 166 passed** against isolated `relay_test` DB.
 - `test:web`: **17 / 17 passed** (2 suites: `AppShell.test.tsx`, `Tasks.test.tsx`).
+- **Database Architecture**: Development environment (`relay`) and automated test runner (`relay_test`) are fully decoupled into separate databases. Running automated test suites no longer truncates dev sandbox data.
+- **Development Tooling**: `npm --workspace apps/api run db:seed` provisions a rich, persistent testing sandbox with 1 Owner, 2 Teams, 2 Managers, 4 Members, and sample tasks across all formats (video/file/text) with active steps and binary attachments.
 - **Lossless Master Video Proof**: Verified (64KB raw binary payload upload + download asserts byte-for-byte identity and identical SHA-256 hash).
 - **Attachment Tenant Isolation**: Verified (Cross-tenant & cross-team upload, list, download, and delete uniformly rejected with 404/403).
 - **Attachment Deletion Authorization**: Verified (Members can delete own uploaded attachments; peers rejected with 403; Managers/Owners have supervisory delete).
@@ -50,19 +54,13 @@ Phase 3 — Content & Attachments (Complete & verified — Multi-tenant `task_at
 Items accepted as trade-offs **only because of dev-environment constraints**. None of these
 are permanent design decisions. Each must be closed before the first production deploy.
 
-### 1. Replace the `relay_migrator` auth-lookup policy with a dedicated definer role
+### 1. Replace the `relay_migrator` definer lookup policies with a dedicated definer role
 
 **Status:** open. **Blocks:** production launch. **Owner:** needs human review (CLAUDE.md §12).
 
-`0003_auth_lookup_policy.sql` grants `relay_migrator` a `SELECT`-only RLS policy on `"user"`
-so the pre-auth login lookup can read a row before any tenant context exists. This works and
-is scoped three ways (one role, one command, one table), but it is **not the tightest design
-available.**
+`0003_auth_lookup_policy.sql` grants `relay_migrator` a `SELECT`-only RLS policy on `"user"` (for pre-auth login lookup), and `0008_notifications.sql` grants `task_definer_lookup` on `task` (for scheduler background task discovery `get_due_scheduled_tasks`). These work and are scoped to `relay_migrator`, but they are **not the tightest design available.**
 
-**The tighter design:** a dedicated `NOLOGIN` role holding `BYPASSRLS` that owns *only*
-`auth_lookup_by_email` and `auth_lookup_by_id`. That confines the bypass to those two function
-calls instead of extending it to anyone holding `relay_migrator` credentials, and lets `0003`
-be dropped entirely.
+**The tighter design:** a dedicated `NOLOGIN` role holding `BYPASSRLS` that owns *only* `auth_lookup_by_email`, `auth_lookup_by_id`, and `get_due_scheduled_tasks`. That confines the bypass strictly to those specific definer function executions instead of extending table-wide `SELECT` to anyone holding `relay_migrator` credentials, and lets both `0003_auth_lookup_policy.sql` and `task_definer_lookup` in `0008_notifications.sql` policies be dropped entirely.
 
 **Is superuser available in production to do this? Yes — on every hosting option considered:**
 
@@ -90,11 +88,7 @@ environment. Probed and confirmed as `relay_migrator`:
 `rolsuper=false, rolcreaterole=false, rolbypassrls=false`, and
 `CREATE ROLE ... NOLOGIN BYPASSRLS` → `permission denied to create role`.
 
-**Definition of done:** definer role added to `bootstrap.sql`; function ownership transferred
-to it; `0003` policy dropped in a new migration (never by editing `0003`); `db:check` extended
-to assert the definer role is `NOLOGIN` and owns nothing but those two functions; the existing
-`auth.e2e-spec.ts` regression block still green (it already pins that the definer lookups did
-not become a general bypass).
+**Definition of done:** definer role added to `bootstrap.sql`; function ownership transferred to it (`auth_lookup_*` and `get_due_scheduled_tasks`); `0003` and `task_definer_lookup` policies dropped in a new migration (never by editing existing migrations); `db:check` extended to assert the definer role is `NOLOGIN` and owns nothing but those definer functions; existing regression suites still green.
 
 ### 2. Require TLS on database connections (`ssl = off` today)
 

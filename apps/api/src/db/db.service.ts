@@ -84,11 +84,12 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
       await client.query(
         `SELECT set_config('app.current_org_id', $1, true),
                 set_config('app.current_role', $2, true),
-                set_config('app.current_manager_id', $3, true)`,
+                set_config('app.current_manager_id', $3, true),
+                set_config('app.current_user_id', $4, true)`,
         // Empty string, not null: set_config rejects a null value. The policies
         // compare against NULLIF(..., '') so '' and unset behave identically —
         // which is what an owner's absent manager_id must mean.
-        [ctx.orgId, ctx.role, ctx.managerId ?? ''],
+        [ctx.orgId, ctx.role, ctx.managerId ?? '', ctx.userId ?? ''],
       );
       const out = await fn(client);
       await client.query('COMMIT');

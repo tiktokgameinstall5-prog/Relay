@@ -11,6 +11,9 @@ import { RolesGuard } from './auth/guards/roles.guard';
 import { ResourceOwnerGuard } from './auth/guards/resource-owner.guard';
 import { TenantContextInterceptor } from './auth/interceptors/tenant-context.interceptor';
 
+import { NotificationModule } from './notifications/notification.module';
+import { SchedulerModule } from './scheduler/scheduler.module';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -61,6 +64,8 @@ import { TenantContextInterceptor } from './auth/interceptors/tenant-context.int
     DbModule,
     AuthModule,
     WorkflowModule,
+    NotificationModule,
+    SchedulerModule,
   ],
   providers: [
     // Global guards run in registration order, so this sequence is load-bearing:

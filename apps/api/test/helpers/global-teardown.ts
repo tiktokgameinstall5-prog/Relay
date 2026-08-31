@@ -8,9 +8,10 @@
 import { Client } from 'pg';
 
 export default async function globalTeardown(): Promise<void> {
-  const url = process.env.MIGRATION_DATABASE_URL;
-  if (!url) return;
+  const rawUrl = process.env.MIGRATION_DATABASE_URL;
+  if (!rawUrl) return;
 
+  const url = rawUrl.replace(/\/relay(\?.*)?$/, '/relay_test$1');
   const client = new Client({ connectionString: url });
   try {
     await client.connect();

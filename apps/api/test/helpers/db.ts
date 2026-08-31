@@ -20,9 +20,12 @@ function requireEnv(name: string): string {
   return v;
 }
 
-export const appPool = new Pool({ connectionString: requireEnv('DATABASE_URL'), max: 4 });
+export const appPool = new Pool({
+  connectionString: requireEnv('DATABASE_URL').replace(/\/relay(\?.*)?$/, '/relay_test$1'),
+  max: 4,
+});
 export const migratorPool = new Pool({
-  connectionString: requireEnv('MIGRATION_DATABASE_URL'),
+  connectionString: requireEnv('MIGRATION_DATABASE_URL').replace(/\/relay(\?.*)?$/, '/relay_test$1'),
   max: 2,
 });
 
@@ -33,10 +36,12 @@ export interface TenantContext {
   role: Role;
   /** null for owner, own id for manager, manager's id for member */
   managerId: string | null;
+  /** caller's own user id */
+  userId?: string | null;
 }
 
 /**
- * Run `fn` inside a transaction with the three RLS session variables set
+ * Run `fn` inside a transaction with the RLS session variables set
  * transaction-locally, exactly as TenantTransactionInterceptor will at runtime.
  * Commits on success, rolls back on throw.
  */
@@ -52,8 +57,9 @@ export async function withTenant<T>(
     await client.query(
       `SELECT set_config('app.current_org_id', $1, true),
               set_config('app.current_role', $2, true),
-              set_config('app.current_manager_id', $3, true)`,
-      [ctx.orgId, ctx.role, ctx.managerId ?? ''],
+              set_config('app.current_manager_id', $3, true),
+              set_config('app.current_user_id', $4, true)`,
+      [ctx.orgId, ctx.role, ctx.managerId ?? '', ctx.userId ?? ''],
     );
     const out = await fn(client);
     await client.query('COMMIT');

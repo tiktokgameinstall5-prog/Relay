@@ -9,6 +9,7 @@
     "db:check": "tsx --env-file-if-exists=.env src/db/scripts/check-db.ts",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/scripts/migrate.ts",
     "db:superuser": "tsx --env-file-if-exists=.env src/db/scripts/create-superuser.ts",
+    "db:seed": "tsx --env-file-if-exists=.env src/db/scripts/seed-dev.ts",
     "db:generate": "drizzle-kit generate",
     "test": "jest",
     "test:e2e": "node --env-file-if-exists=.env ../../node_modules/jest/bin/jest.js --config jest.e2e.config.ts --runInBand",

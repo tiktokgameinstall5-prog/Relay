@@ -13,13 +13,14 @@ import { Client } from 'pg';
 const REQUIRED_RLS_TABLES = ['organization', 'user', 'team', 'audit_log'];
 
 export default async function globalSetup(): Promise<void> {
-  const url = process.env.MIGRATION_DATABASE_URL;
-  if (!url) {
+  const rawUrl = process.env.MIGRATION_DATABASE_URL;
+  if (!rawUrl) {
     throw new Error(
       'MIGRATION_DATABASE_URL is not set. Tests load apps/api/.env — copy it from .env.example.',
     );
   }
 
+  const url = rawUrl.replace(/\/relay(\?.*)?$/, '/relay_test$1');
   const client = new Client({ connectionString: url });
   try {
     await client.connect();
