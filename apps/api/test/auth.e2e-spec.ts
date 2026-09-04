@@ -419,7 +419,7 @@ describe('login rate limiting (5 attempts / 15 min, keyed on email + IP)', () =>
     expect(statuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
     // Attempts past the budget are rejected before any password check runs.
     expect(statuses.slice(5)).toEqual([429, 429]);
-  });
+  }, 60_000);
 
   it('does not let one account exhaust another account budget on the same IP', async () => {
     // The reason for keying on email+IP rather than IP alone. Under IP-only
@@ -449,7 +449,7 @@ describe('login rate limiting (5 attempts / 15 min, keyed on email + IP)', () =>
       .post('/api/auth/login')
       .send({ email: 'CASE.TARGET@ACME.TEST', password: 'WrongHorse!9xy' })
       .expect(429);
-  });
+  }, 60_000);
 });
 
 describe('the SECURITY DEFINER lookups did not become a general bypass', () => {

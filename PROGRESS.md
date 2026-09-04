@@ -4,21 +4,17 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 4 — Scheduling & Notifications (COMPLETE — Full-stack implementation verified and committed on `feat/phase4-scheduling-notifications`).
+Phase 5 — Rankings, Reporter Workflow, and Time-Tracking Analytics (COMPLETE — Full-stack implementation verified and committed on `feat/phase5-rankings-reporter`).
 
 **Backend & Isolation Gates:**
-- `Phase 4 Backend Suite`: **17 / 17 passed** (3 suites: `notification-rls.e2e-spec.ts` [6], `notification-isolation.e2e-spec.ts` [6], `scheduling-workflow.e2e-spec.ts` [5]).
-- `Sabotage Verification 1 (Notification RLS Policy)`: Mutated policy to drop `user_id = app_current_user_id()` check $\rightarrow$ RED (`Expected value: not "..."`, 2 failed); Revert $\rightarrow$ GREEN (6 passed).
-- `Sabotage Verification 2 (Scheduler Atomic CAS Update)`: Mutated `WHERE id = $2 AND status = 'scheduled'` to `WHERE id = $2` $\rightarrow$ RED (`Expected: false, Received: true` on already-activated task); Revert $\rightarrow$ GREEN (5 passed).
-- `test:isolation`: **178 / 178 passed** across all 8 suites (`rls`, `http-isolation`, `workflow-rls`, `workflow-isolation`, `attachment-rls`, `attachment-isolation`, `notification-rls`, `notification-isolation`).
-- `test:e2e`: **335 / 335 passed** across all 17 backend suites.
-- `test:web`: **26 / 26 passed** across all 3 frontend suites (`NotificationBell.test.tsx` [6], `AppShell.test.tsx` [5], `Tasks.test.tsx` [15]).
-- `web typecheck & build`: Clean (0 TypeScript errors, 1830 modules built in 1.88s).
-- **Database Architecture**: Development environment (`relay`) and automated test runner (`relay_test`) are fully decoupled into separate databases. Running automated test suites no longer truncates dev sandbox data.
-- **Development Tooling**: `npm --workspace apps/api run db:seed` provisions a rich, persistent testing sandbox with 1 Owner, 2 Teams, 2 Managers, 4 Members, and sample tasks across all formats (video/file/text) with active steps and binary attachments.
-- **Lossless Master Video Proof**: Verified (64KB raw binary payload upload + download asserts byte-for-byte identity and identical SHA-256 hash).
-- **Attachment Tenant Isolation**: Verified (Cross-tenant & cross-team upload, list, download, and delete uniformly rejected with 404/403).
-- **Attachment Deletion Authorization**: Verified (Members can delete own uploaded attachments; peers rejected with 403; Managers/Owners have supervisory delete).
+- `Phase 5 Backend Suites`: **39 / 39 passed** across 4 suites (`ranking-rls.e2e-spec.ts` [8], `ranking-isolation.e2e-spec.ts` [11], `report-rls.e2e-spec.ts` [9], `report-isolation.e2e-spec.ts` [11]).
+- `Sabotage Verification 1 (Reporter Role Gate)`: Mutated `isReporter` check to allow non-reporters $\rightarrow$ RED (`Expected: 403, Received: 201`); Revert $\rightarrow$ GREEN (`403 Forbidden`).
+- `Sabotage Verification 2 (Mandatory Reason DB Constraint)`: Mutated reason to empty string `''` $\rightarrow$ DB-level rejection via `CHECK (length(trim(reason)) > 0)` constraint (`23514`).
+- `test:isolation`: **217 / 217 passed** across all 12 backend isolation/RLS suites.
+- `test:web`: **42 / 42 passed** across all 5 frontend test suites (`NotificationBell.test.tsx` [6], `AppShell.test.tsx` [5], `Tasks.test.tsx` [15], `Rankings.test.tsx` [9], `Reports.test.tsx` [7]).
+- `web typecheck & build`: Clean (0 TypeScript errors, 1834 modules built in 2.24s).
+- **Ranking Audit History Privacy**: Strictly enforced; Members can view only their own ranking history; querying peer history returns uniform anti-oracle `404 Not Found`.
+- **Reporter Workflow Gate**: Submitting task completion report strictly gated to task completion status (`status === 'completed'`) and designated reporter or manager/owner role.
 
 ## Phase checklist
 
@@ -56,7 +52,16 @@ Phase 4 — Scheduling & Notifications (COMPLETE — Full-stack implementation v
   - [x] sabotage verification on both notification RLS policy and atomic scheduler CAS
   - [x] frontend notification bell in `AppShell` with unread count badge, 30s background poll, and popover actions
   - [x] frontend task scheduling toggle & datetime picker on `Tasks.tsx` with 365-day validation and `Scheduled` status chip
-- [ ] Phase 5 — Rankings & Reporter workflow, time-tracking analytics
+- [x] Phase 5 — Rankings & Reporter workflow, time-tracking analytics
+  - [x] multi-tenant `ranking_event` & `task_report` tables with composite FKs, RLS, and non-empty CHECK constraints (`0009_rankings_and_reports.sql`)
+  - [x] `RankingService` & `RankingController`: leaderboard, score adjustment (0–100) with mandatory audit reason, designated reporter toggle, and self-scoped audit history
+  - [x] `ReportService` & `ReportController`: post-completion delivery reports, reporter/manager write gate, anti-oracle 404s
+  - [x] `AnalyticsService` & `AnalyticsController`: operational overview & bottleneck step detection
+  - [x] workflow completion hook triggering `reporter_prompt` notifications
+  - [x] dual-layer tests: 17 DB RLS (`ranking-rls`, `report-rls`) + 22 HTTP isolation (`ranking-isolation`, `report-isolation`)
+  - [x] frontend screens (`Rankings.tsx`, `Reports.tsx`), navigation routing, analytics summary on `Overview.tsx`
+  - [x] frontend unit test suites (`Rankings.test.tsx`, `Reports.test.tsx`)
+- [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)
 - [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)
 
 ## Production hardening TODO (must be resolved before launch)
@@ -199,6 +204,44 @@ guard = "may you address this row at all", the writing statement = "may you do *
 ## Log
 
 <!-- Add one entry per session, most recent on top -->
+
+### 2026-09-04 — Phase 5: Rankings, Reporter Workflow, and Time-Tracking Analytics
+
+Implemented, tested, and verified Phase 5 across the full stack on `feat/phase5-rankings-reporter`.
+
+**What was built & verified:**
+1. **Database Schema & RLS Policies (`0009_rankings_and_reports.sql`):**
+   - Tables created: `ranking_event` (append-only audit log) and `task_report` (completion summaries).
+   - Invariant: `CHECK (ranking >= 0 AND ranking <= 100)` on `"user".ranking`.
+   - Invariant: `CHECK (length(trim(reason)) > 0)` on `ranking_event.reason` — database-enforced non-empty audit reasons.
+   - Invariant: `CHECK (length(trim(summary)) > 0)` on `task_report.summary` — database-enforced non-empty report summaries.
+   - Composite FKs: `(org_id, user_id)`, `(org_id, changed_by_user_id)`, `(org_id, task_id)`, `(org_id, reported_by_user_id)`.
+   - Single-report uniqueness: `CREATE UNIQUE INDEX task_report_task_key ON task_report (task_id)`.
+   - RLS ENABLE + FORCE on both tables; `GRANT SELECT, INSERT` on `ranking_event`, `GRANT SELECT, INSERT, UPDATE` on `task_report` (`DELETE` withheld).
+   - Migrations applied and synchronized across both `relay` (dev) and `relay_test` (test) databases.
+2. **Backend Modules (`apps/api`):**
+   - `RankingModule`: Leaderboard listing, score adjustments with mandatory audit reason logging, designated reporter toggle (`is_reporter`), and self-scoped ranking audit history.
+   - `ReportModule`: Post-completion report submission (`POST /tasks/:id/report`) and listing (`GET /reports`). Preconditioned on task `status === 'completed'`. Role-gated to designated reporters or managers/owners.
+   - `AnalyticsModule`: System-wide and team-scoped metrics (`GET /analytics/overview`), completion rate calculations, and step duration bottleneck detection (`GET /analytics/bottlenecks`).
+   - Workflow Hook: Task completion automatically notifies active reporters via `reporter_prompt` notification type.
+3. **Dual-Layer Isolation Gates & Sabotage Proofs:**
+   - DB RLS Suites: `ranking-rls.e2e-spec.ts` (8/8) and `report-rls.e2e-spec.ts` (9/9).
+   - HTTP Isolation Suites: `ranking-isolation.e2e-spec.ts` (11/11) and `report-isolation.e2e-spec.ts` (11/11).
+   - Sabotage Proof 1 (Reporter Role Gate): Disabling reporter check turned expected 403 into 201 (RED); reverted to 403 (GREEN).
+   - Sabotage Proof 2 (Database Reason Constraint): Inserting empty reason rejected with Postgres error `23514` check_violation.
+   - Privacy Guard: Member querying a peer's audit history uniformly receives anti-oracle `404 Not Found`.
+4. **Frontend Implementation (`apps/web`):**
+   - Types and API client modules: `rankings.ts`, `reports.ts`, `analytics.ts`.
+   - `Rankings.tsx`: Podium leaderboard matching prototype, progress bar, manager score adjustment modal with mandatory reason, designated reporter toggle, and audit history modal.
+   - `Reports.tsx`: Task completion reports feed matching prototype, expandable highlights/blockers, and completion report submission modal.
+   - `Overview.tsx`: Operational analytics tiles and step bottleneck identification card.
+   - Component unit tests: `Rankings.test.tsx` (9/9 passed) and `Reports.test.tsx` (7/7 passed).
+   - `vite.config.ts`: Switched to `pool: 'threads'` for stable, fast Windows test runs.
+
+**Test Counts:**
+- `test:isolation`: **217 / 217 passed** (12 suites: `rls`, `http-isolation`, `workflow-rls`, `workflow-isolation`, `attachment-rls`, `attachment-isolation`, `notification-rls`, `notification-isolation`, `ranking-rls`, `ranking-isolation`, `report-rls`, `report-isolation`).
+- `test:web`: **42 / 42 passed** (5 suites: `NotificationBell.test.tsx` [6], `AppShell.test.tsx` [5], `Tasks.test.tsx` [15], `Rankings.test.tsx` [9], `Reports.test.tsx` [7]).
+- `web typecheck & build`: Clean (0 errors, built in 2.24s).
 
 ### 2026-08-29 (Fast-Follow) — Phase 2: Owner Task Assignment (3 Modes) + Member Peer Hand-Off with Zero-DELETE Deduplication
 

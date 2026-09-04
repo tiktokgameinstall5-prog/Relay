@@ -674,6 +674,26 @@ export class WorkflowService {
 
           await this.notificationService.createNotifications(c, completionNotifs);
 
+          // Phase 5: Prompt designated reporters for completion report
+          const reporters = await c.query<{ id: string }>(
+            `SELECT id FROM "user"
+              WHERE org_id = $1 AND is_reporter = true AND status = 'active'
+                AND (team_id = $2 OR role IN ('owner', 'manager'))`,
+            [actor.orgId, task.team_id],
+          );
+          if (reporters.rows.length > 0) {
+            const reporterNotifs = reporters.rows.map((r) => ({
+              orgId: actor.orgId,
+              userId: r.id,
+              managerId: task.manager_id,
+              type: 'reporter_prompt' as const,
+              title: `Task report required: ${taskName}`,
+              body: `Task "${taskName}" has completed. Please submit the final completion report.`,
+              data: { taskId },
+            }));
+            await this.notificationService.createNotifications(c, reporterNotifs);
+          }
+
           await this.writeAuditLog(c, actor, 'task.completed', taskId, {
             completedStepOrder,
           });

@@ -27,8 +27,10 @@ import {
   User,
   Users,
   Video,
+  MessageSquare,
   X,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import {
   createTask,
@@ -322,7 +324,18 @@ function TaskCard({
 
         {/* Action Bar / Forward & Hand-off Prompts */}
         <div className="mt-4 flex flex-col items-start justify-between gap-3 border-t border-hairline pt-3 text-xs sm:flex-row sm:items-center">
-          <div className="text-faint">Created {fmtDateTime(task.createdAt)}</div>
+          <div className="flex items-center gap-3">
+            <div className="text-faint">Created {fmtDateTime(task.createdAt)}</div>
+            {task.status === 'completed' && (
+              <Link
+                to="/reports"
+                className="flex items-center gap-1 font-medium text-signal hover:underline"
+              >
+                <MessageSquare size={12} />
+                Completion reports →
+              </Link>
+            )}
+          </div>
 
           {isMyActiveStep && (
             <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">

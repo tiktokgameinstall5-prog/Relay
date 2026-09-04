@@ -65,8 +65,8 @@ if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
     const app = await createNestApp();
     const env = appEnv(app.get(ConfigService));
     const logger = new Logger('Bootstrap');
-    await app.listen(env.PORT);
-    logger.log(`API listening on http://localhost:${env.PORT}/api`);
+    await app.listen(env.PORT, '0.0.0.0');
+    logger.log(`API listening on http://127.0.0.1:${env.PORT}/api`);
     if (env.API_DOCS_ENABLED) {
       logger.log(`API docs at http://localhost:${env.PORT}/api/${API_DOCS_PATH}`);
     }

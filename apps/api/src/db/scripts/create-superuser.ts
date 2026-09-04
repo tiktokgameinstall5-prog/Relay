@@ -41,29 +41,30 @@ async function main() {
     );
 
     if (existing.rows.length > 0) {
-      const u = existing.rows[0];
-      console.log(`\n⚠️  User with email "${email}" already exists (ID: ${u.id}, Org: ${u.org_id}, Role: ${u.role}).`);
+      console.log(`\n⚠️  Found ${existing.rows.length} existing account(s) for "${email}". Synchronizing password across all organizations...`);
       
-      // Update password hash to requested password
       const passwordHash = await hash(password, BCRYPT_COST);
-      await client.query('BEGIN');
-      await client.query(
-        `SELECT set_config('app.current_org_id', $1, true),
-                set_config('app.current_role', 'owner', true),
-                set_config('app.current_manager_id', '', true)`,
-        [u.org_id],
-      );
-      await client.query(
-        `UPDATE "user" SET password_hash = $1, status = 'active', updated_at = now() WHERE id = $2`,
-        [passwordHash, u.id],
-      );
-      await client.query('COMMIT');
+      for (const u of existing.rows) {
+        await client.query('BEGIN');
+        await client.query(
+          `SELECT set_config('app.current_org_id', $1, true),
+                  set_config('app.current_role', 'owner', true),
+                  set_config('app.current_manager_id', '', true)`,
+          [u.org_id],
+        );
+        await client.query(
+          `UPDATE "user" SET password_hash = $1, status = 'active', updated_at = now() WHERE id = $2`,
+          [passwordHash, u.id],
+        );
+        await client.query('COMMIT');
+        console.log(`  Updated user ${u.id} in org ${u.org_id} (role: ${u.role})`);
+      }
 
-      console.log(`✅ Password updated successfully.`);
+      console.log(`✅ All passwords updated successfully.`);
       console.log(`\n--- Login Credentials ---`);
       console.log(`Email:    ${email}`);
       console.log(`Password: ${password}`);
-      console.log(`Role:     ${u.role}`);
+      console.log(`Role:     owner`);
       return;
     }
 

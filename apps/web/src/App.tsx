@@ -23,7 +23,8 @@ import { Teams } from './screens/Teams';
 import { TeamDetail } from './screens/TeamDetail';
 import { MyTeam } from './screens/MyTeam';
 import { Tasks } from './screens/Tasks';
-import { Phase2Stub } from './screens/Phase2Stub';
+import { Rankings } from './screens/Rankings';
+import { Reports } from './screens/Reports';
 import type { UserRole } from './api/types';
 
 /** The dashboard a signed-in user lands on, by role. Every target is a route
@@ -113,26 +114,8 @@ export function App() {
                 </RequireRole>
               }
             />
-            <Route
-              path="/rankings"
-              element={
-                <Phase2Stub
-                  title="Rankings"
-                  what="The per-team leaderboard, with every ranking change logged for audit."
-                  task="Phase 5 — rankings and the reporter workflow"
-                />
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <Phase2Stub
-                  title="Reports"
-                  what="Completion reports written by a team's reporter when a task's final step finishes."
-                  task="Phase 5 — rankings and the reporter workflow"
-                />
-              }
-            />
+            <Route path="/rankings" element={<Rankings />} />
+            <Route path="/reports" element={<Reports />} />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

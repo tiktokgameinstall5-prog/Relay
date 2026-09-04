@@ -248,7 +248,8 @@ export type NotificationType =
   | 'step_activated'
   | 'task_completed'
   | 'task_scheduled_live'
-  | 'reporter_prompt';
+  | 'reporter_prompt'
+  | 'ranking_changed';
 
 export interface NotificationResponse {
   id: string;
@@ -268,5 +269,89 @@ export interface NotificationListResponse {
   unreadCount: number;
 }
 
+/** Phase 5 — Rankings, Reports, and Analytics shapes */
 
+export interface LeaderboardUser {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  ranking: number;
+  isReporter: boolean;
+  teamId: string | null;
+  teamName: string | null;
+}
 
+export interface UpdateRankingInput {
+  ranking: number;
+  reason: string;
+}
+
+export interface SetReporterInput {
+  isReporter: boolean;
+}
+
+export interface RankingEventResponse {
+  id: string;
+  userId: string;
+  oldRanking: number;
+  newRanking: number;
+  changedByUserId: string;
+  changedByName: string | null;
+  reason: string;
+  createdAt: string;
+}
+
+export interface TaskReportResponse {
+  id: string;
+  taskId: string;
+  taskName: string;
+  reportedByUserId: string;
+  reportedByName?: string;
+  summary: string;
+  highlights?: string;
+  blockers?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTaskReportInput {
+  summary: string;
+  highlights?: string | undefined;
+  blockers?: string | undefined;
+  metadata?: Record<string, unknown> | undefined;
+}
+
+export interface AnalyticsOverview {
+  tasks: {
+    total: number;
+    completed: number;
+    inProgress: number;
+    scheduled: number;
+    completionRate: number;
+  };
+  rankings: {
+    averageRanking: number;
+    topPerformer: {
+      name: string;
+      score: number;
+    } | null;
+  };
+  membersCount: number;
+}
+
+export interface BottleneckStep {
+  stepId: string;
+  taskId: string;
+  taskName: string;
+  stepOrder: number;
+  memberName: string;
+  durationSeconds: number;
+  durationFormatted: string;
+}
+
+export interface BottlenecksResponse {
+  bottlenecks: BottleneckStep[];
+  averageStepDurationSeconds: number;
+}

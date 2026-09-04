@@ -8,9 +8,10 @@
  * route (RequireRole) — listManagers 403s for anyone else by design.
  */
 import { Link } from 'react-router-dom';
-import { Building2, Crown, UserPlus, Users } from 'lucide-react';
+import { Building2, Crown, UserPlus, Users, Activity, AlertTriangle, Trophy, CheckCircle2 } from 'lucide-react';
 import { listManagers, listTeams } from '../api/auth';
-import type { ManagerListRow, TeamListRow } from '../api/types';
+import { getAnalyticsOverview, getBottlenecks } from '../api/analytics';
+import type { ManagerListRow, TeamListRow, AnalyticsOverview, BottlenecksResponse } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
 import { StatTile } from '../components/StatTile';
@@ -20,8 +21,13 @@ const MAX_CARDS = 6;
 
 export function Overview() {
   const { state } = useAsync(async () => {
-    const [teams, managers] = await Promise.all([listTeams(), listManagers()]);
-    return { teams, managers };
+    const [teams, managers, analytics, bottlenecks] = await Promise.all([
+      listTeams(),
+      listManagers(),
+      getAnalyticsOverview().catch(() => null),
+      getBottlenecks().catch(() => null),
+    ]);
+    return { teams, managers, analytics, bottlenecks };
   });
 
   return (
@@ -33,14 +39,31 @@ export function Overview() {
 
       <div className="mt-5">
         <AsyncView state={state}>
-          {({ teams, managers }) => <OverviewBody teams={teams} managers={managers} />}
+          {({ teams, managers, analytics, bottlenecks }) => (
+            <OverviewBody
+              teams={teams}
+              managers={managers}
+              analytics={analytics}
+              bottlenecks={bottlenecks}
+            />
+          )}
         </AsyncView>
       </div>
     </div>
   );
 }
 
-function OverviewBody({ teams, managers }: { teams: TeamListRow[]; managers: ManagerListRow[] }) {
+function OverviewBody({
+  teams,
+  managers,
+  analytics,
+  bottlenecks,
+}: {
+  teams: TeamListRow[];
+  managers: ManagerListRow[];
+  analytics: AnalyticsOverview | null;
+  bottlenecks: BottlenecksResponse | null;
+}) {
   const membersCount = teams.reduce((sum, t) => sum + t.memberCount, 0);
 
   // Pending invites = member invites + manager invites. The two sets are
@@ -62,6 +85,71 @@ function OverviewBody({ teams, managers }: { teams: TeamListRow[]; managers: Man
         <StatTile label="Members" value={membersCount} icon={<Users size={13} />} />
         <StatTile label="Pending invites" value={pendingCount} icon={<UserPlus size={13} />} />
       </div>
+
+      {analytics && (
+        <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="border-hairline rounded-xl border bg-white p-5">
+            <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
+              <CheckCircle2 size={13} className="text-[#00C875]" />
+              <span>Completion rate</span>
+            </div>
+            <div className="font-display mt-2 text-3xl font-bold tabular-nums text-[#00C875]">
+              {analytics.tasks.completionRate}%
+            </div>
+          </div>
+
+          <StatTile
+            label="Total tasks"
+            value={analytics.tasks.total}
+            icon={<Activity size={13} />}
+          />
+
+          <div className="border-hairline rounded-xl border bg-white p-5">
+            <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
+              <Trophy size={13} className="text-[#0073EA]" />
+              <span>Avg member score</span>
+            </div>
+            <div className="font-display mt-2 text-3xl font-bold tabular-nums text-[#0073EA]">
+              {analytics.rankings.averageRanking ? Math.round(analytics.rankings.averageRanking) : '—'}
+            </div>
+          </div>
+
+          <div className="border-hairline rounded-xl border bg-white p-5">
+            <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
+              <Crown size={13} className="text-[#FDAB3D]" />
+              <span>Top performer</span>
+            </div>
+            <div className="font-display mt-2 truncate text-2xl font-bold text-[#FDAB3D]">
+              {analytics.rankings.topPerformer ? analytics.rankings.topPerformer.name.split(' ')[0] : '—'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {bottlenecks && bottlenecks.bottlenecks.length > 0 && (
+        <div className="border-hairline mt-6 rounded-xl border bg-white p-5">
+          <div className="mb-3 flex items-center gap-2 text-[#FDAB3D]">
+            <AlertTriangle size={16} />
+            <h2 className="font-display text-[15px] font-semibold text-[#161A22]">Workflow Bottlenecks</h2>
+          </div>
+          <p className="text-xs text-[#68707C]">
+            These steps exceeded the average duration ({bottlenecks.averageStepDurationSeconds}s) and may require attention:
+          </p>
+          <div className="mt-3 divide-y divide-[#F4F5F8]">
+            {bottlenecks.bottlenecks.map((b) => (
+              <div key={b.stepId} className="flex items-center justify-between py-2 text-xs">
+                <div>
+                  <span className="font-medium text-[#161A22]">{b.taskName}</span>{' '}
+                  <span className="text-[#9AA1AC]">· Step {b.stepOrder} ({b.memberName})</span>
+                </div>
+                <span className="font-mono font-semibold text-[#FDAB3D]">
+                  {b.durationFormatted}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {teams.length === 0 ? (
         <EmptyTeams hasManagers={managers.length > 0} />

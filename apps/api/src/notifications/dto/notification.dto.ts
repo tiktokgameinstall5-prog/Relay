@@ -7,7 +7,8 @@ export type NotificationType =
   | 'step_activated'
   | 'task_completed'
   | 'task_scheduled_live'
-  | 'reporter_prompt';
+  | 'reporter_prompt'
+  | 'ranking_changed';
 
 export class NotificationResponseDto {
   @ApiProperty({ format: 'uuid' })
@@ -29,6 +30,7 @@ export class NotificationResponseDto {
       'task_completed',
       'task_scheduled_live',
       'reporter_prompt',
+      'ranking_changed',
     ],
   })
   type!: NotificationType;

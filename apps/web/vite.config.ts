@@ -17,8 +17,9 @@ export default defineConfig({
       // The API keeps its global 'api' prefix, so the path passes through
       // unrewritten.
       '/api': {
-        target: 'http://localhost:3000',
+        target: 'http://127.0.0.1:3000',
         changeOrigin: false,
+        timeout: 60000,
       },
     },
   },
@@ -32,8 +33,8 @@ export default defineConfig({
     setupFiles: ['./src/test/setup.ts'],
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
-    // Windows + npm workspace: pool: 'forks' + fileParallelism: false avoids thread worker handshake timeouts.
-    pool: 'forks',
+    // Windows + npm workspace: pool: 'threads' avoids worker process handshake timeouts.
+    pool: 'threads',
     fileParallelism: false,
     testTimeout: 30000,
     hookTimeout: 30000,

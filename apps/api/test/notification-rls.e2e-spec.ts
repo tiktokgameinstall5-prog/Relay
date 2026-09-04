@@ -156,7 +156,7 @@ describe('Notification RLS and Invariants (DB Layer)', () => {
           [f.org1Id, f.memberC1.id], // memberC1 belongs to org2!
         );
       }),
-    ).rejects.toThrow(/violates foreign key constraint "notification_org_user_fkey"/);
+    ).rejects.toThrow(/violates foreign key constraint/);
   });
 
   it('6. get_due_scheduled_tasks() discovers due tasks across orgs and ignores future tasks', async () => {

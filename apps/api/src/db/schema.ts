@@ -287,6 +287,108 @@ export const taskAttachment = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// notification — in-app notifications (Phase 4)
+// ---------------------------------------------------------------------------
+export const notificationTypeEnum = pgEnum('notification_type', [
+  'task_assigned',
+  'step_active',
+  'task_completed',
+  'scheduled_task_live',
+  'ranking_changed',
+]);
+
+export const notification = pgTable(
+  'notification',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'restrict' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    managerId: uuid('manager_id').references(() => user.id, { onDelete: 'restrict' }),
+    type: notificationTypeEnum('type').notNull(),
+    title: text('title').notNull(),
+    message: text('message').notNull(),
+    taskId: uuid('task_id').references(() => task.id, { onDelete: 'cascade' }),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_notification_user_created').on(t.orgId, t.userId, t.readAt, t.createdAt),
+    uniqueIndex('notification_org_id_id_key').on(t.orgId, t.id),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// ranking_event — append-only ranking audit history (Phase 5)
+// ---------------------------------------------------------------------------
+export const rankingEvent = pgTable(
+  'ranking_event',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'restrict' }),
+    managerId: uuid('manager_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    oldRanking: integer('old_ranking').notNull(),
+    newRanking: integer('new_ranking').notNull(),
+    changedByUserId: uuid('changed_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    reason: text('reason').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_ranking_event_org_id').on(t.orgId),
+    index('idx_ranking_event_manager_id').on(t.managerId),
+    index('idx_ranking_event_user_id').on(t.userId),
+    index('idx_ranking_event_created_at').on(t.createdAt),
+    uniqueIndex('ranking_event_org_id_id_key').on(t.orgId, t.id),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// task_report — completion reports by reporters (Phase 5)
+// ---------------------------------------------------------------------------
+export const taskReport = pgTable(
+  'task_report',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    orgId: uuid('org_id')
+      .notNull()
+      .references(() => organization.id, { onDelete: 'restrict' }),
+    managerId: uuid('manager_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    taskId: uuid('task_id')
+      .notNull()
+      .references(() => task.id, { onDelete: 'cascade' }),
+    reportedByUserId: uuid('reported_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    summary: text('summary').notNull(),
+    highlights: text('highlights'),
+    blockers: text('blockers'),
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('idx_task_report_org_id').on(t.orgId),
+    index('idx_task_report_manager_id').on(t.managerId),
+    uniqueIndex('idx_task_report_task_id').on(t.taskId),
+    uniqueIndex('task_report_org_id_id_key').on(t.orgId, t.id),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Inferred types
 // ---------------------------------------------------------------------------
 export type Organization = typeof organization.$inferSelect;
@@ -305,6 +407,12 @@ export type TaskStep = typeof taskStep.$inferSelect;
 export type NewTaskStep = typeof taskStep.$inferInsert;
 export type TaskAttachment = typeof taskAttachment.$inferSelect;
 export type NewTaskAttachment = typeof taskAttachment.$inferInsert;
+export type Notification = typeof notification.$inferSelect;
+export type NewNotification = typeof notification.$inferInsert;
+export type RankingEvent = typeof rankingEvent.$inferSelect;
+export type NewRankingEvent = typeof rankingEvent.$inferInsert;
+export type TaskReport = typeof taskReport.$inferSelect;
+export type NewTaskReport = typeof taskReport.$inferInsert;
 
 export type UserRole = (typeof userRoleEnum.enumValues)[number];
 export type UserStatus = (typeof userStatusEnum.enumValues)[number];
@@ -312,5 +420,6 @@ export type TeamStatus = (typeof teamStatusEnum.enumValues)[number];
 export type TaskType = (typeof taskTypeEnum.enumValues)[number];
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type TaskStepStatus = (typeof taskStepStatusEnum.enumValues)[number];
+export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
 

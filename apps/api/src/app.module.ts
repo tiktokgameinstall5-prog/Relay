@@ -13,6 +13,9 @@ import { TenantContextInterceptor } from './auth/interceptors/tenant-context.int
 
 import { NotificationModule } from './notifications/notification.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
+import { RankingModule } from './ranking/ranking.module';
+import { ReportModule } from './report/report.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -66,6 +69,9 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     WorkflowModule,
     NotificationModule,
     SchedulerModule,
+    RankingModule,
+    ReportModule,
+    AnalyticsModule,
   ],
   providers: [
     // Global guards run in registration order, so this sequence is load-bearing:
