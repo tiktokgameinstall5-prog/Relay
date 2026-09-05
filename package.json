@@ -11,9 +11,12 @@
   },
   "scripts": {
     "dev": "npm --workspace apps/api run start:dev",
+    "dev:api": "npm --workspace apps/api run start:dev",
+    "dev:web": "npm --workspace apps/web run dev",
     "build": "npm --workspace apps/api run build",
     "db:check": "npm --workspace apps/api run db:check",
     "db:migrate": "npm --workspace apps/api run db:migrate",
+    "db:superuser": "npm --workspace apps/api run db:superuser",
     "test": "npm --workspace apps/api run test",
     "test:e2e": "npm --workspace apps/api run test:e2e",
     "test:isolation": "npm --workspace apps/api run test:isolation",
