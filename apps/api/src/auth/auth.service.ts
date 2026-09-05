@@ -16,6 +16,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -828,6 +829,14 @@ export class AuthService {
           targetId: row.id,
         });
 
+        // Revoke any prior refresh tokens for this user so only the newly minted session survives
+        await c.query(
+          `UPDATE refresh_token
+              SET revoked_at = now()
+            WHERE user_id = $1 AND revoked_at IS NULL`,
+          [row.id],
+        );
+
         // Same transaction as the activation: the account cannot end up
         // activated-but-sessionless, nor with a token that a rolled-back
         // activation never earned. New family — this is a fresh session.
@@ -1183,5 +1192,394 @@ export class AuthService {
       await c.query('ROLLBACK TO SAVEPOINT audit_write');
       this.logger.error(`Audit write failed for ${entry.action}: ${(err as Error).message}`);
     }
+  }
+
+  /**
+   * Public rate-limited passcode recovery ("Forgot Passcode").
+   * Strict anti-oracle discipline: returns the identical message regardless of whether
+   * the email exists, belongs to an owner, or is deactivated.
+   */
+  async requestPasscodeReset(email: string): Promise<{ message: string }> {
+    const normalizedEmail = email.trim().toLowerCase();
+    const genericResponse = {
+      message: 'If an eligible account exists with that email, a passcode reset link has been dispatched.',
+    };
+
+    // Find candidate user context-free via security definer function
+    const row = await this.db.withoutTenant(async (c) => {
+      const res = await c.query<{
+        id: string;
+        org_id: string;
+        role: UserRole;
+        manager_id: string | null;
+        status: string;
+      }>(
+        'SELECT id, org_id, role, manager_id, status FROM auth_lookup_by_email($1)',
+        [normalizedEmail],
+      );
+      return res.rows[0] ?? null;
+    });
+
+    // Anti-oracle timing: always hash dummy if user not found or not eligible
+    if (!row || row.status !== 'active' || (row.role !== 'manager' && row.role !== 'member')) {
+      await this.dummyHashPromise;
+      return genericResponse;
+    }
+
+    // Eligible manager or member: generate new passcode and update user
+    const passcode = generatePasscode();
+    const passcodeHash = await hash(passcode, this.bcryptCost);
+    const expiresAt = new Date(Date.now() + this.passcodeTtlHours * 60 * 60 * 1000);
+
+    let userName = 'there';
+
+    // Update using tenant context of the user's org
+    await this.db.withTenant(
+      {
+        orgId: row.org_id,
+        role: row.role,
+        managerId: row.manager_id,
+        userId: row.id,
+      },
+      async (c) => {
+        const updateRes = await c.query<{ name: string }>(
+          `UPDATE "user"
+              SET passcode_hash = $1,
+                  passcode_expires_at = $2,
+                  passcode_used_at = NULL,
+                  password_hash = NULL
+            WHERE id = $3 AND org_id = $4
+            RETURNING name`,
+          [passcodeHash, expiresAt, row.id, row.org_id],
+        );
+        if (updateRes.rows[0]?.name) {
+          userName = updateRes.rows[0].name;
+        }
+
+        // Revoke all existing refresh-token sessions so stolen/compromised sessions cannot survive
+        await c.query(
+          `UPDATE refresh_token
+              SET revoked_at = now()
+            WHERE user_id = $1 AND revoked_at IS NULL`,
+          [row.id],
+        );
+
+        await this.writeAudit(c, {
+          orgId: row.org_id,
+          actorUserId: row.id,
+          action: 'user.passcode_reset_requested',
+          targetType: 'user',
+          targetId: row.id,
+        });
+      },
+    );
+
+    // Send email
+    try {
+      await this.mailer.send({
+        to: normalizedEmail,
+        subject: 'Your Relay Passcode Reset',
+        text:
+          `Hello ${userName},\n\n` +
+          `A passcode reset was requested for your Relay account.\n` +
+          `Your new single-use passcode is: ${passcode}\n\n` +
+          `This passcode expires in ${this.passcodeTtlHours} hours.\n` +
+          `Use it to sign in at: ${this.appBaseUrl}/first-login\n\n` +
+          `If you did not request this, you can ignore this email.`,
+      });
+    } catch (err) {
+      this.logger.error(`Failed to send passcode reset email: ${(err as Error).message}`);
+    }
+
+    return genericResponse;
+  }
+
+  /**
+   * Soft-deactivates a member after ensuring they have no active task steps.
+   * Emits a 409 Conflict if active steps are held (CLAUDE.md §5).
+   */
+  async deactivateMember(
+    actor: CurrentUser,
+    memberId: string,
+  ): Promise<{ message: string }> {
+    return await this.db.tx(async (c) => {
+      // 1. Find member and verify tenant scope
+      const memberRes = await c.query<{
+        id: string;
+        org_id: string;
+        manager_id: string;
+        status: string;
+      }>(
+        `SELECT id, org_id, manager_id, status FROM "user" WHERE id = $1 AND role = 'member' AND org_id = $2`,
+        [memberId, actor.orgId],
+      );
+      if (memberRes.rowCount === 0) {
+        throw new NotFoundException('Member not found in your organization.');
+      }
+      const member = memberRes.rows[0];
+
+      // If actor is manager, ensure member belongs to this manager
+      if (actor.role === 'manager' && member.manager_id !== actor.userId) {
+        throw new ForbiddenException('You can only deactivate members in your own team.');
+      }
+
+      // 2. Check for active task steps
+      const activeStepsRes = await c.query<{ count: string }>(
+        `SELECT count(*)::text as count
+           FROM task_step ts
+           JOIN task t ON t.id = ts.task_id
+          WHERE ts.assigned_user_id = $1
+            AND ts.status = 'active'
+            AND t.org_id = $2`,
+        [memberId, actor.orgId],
+      );
+      const activeStepsCount = parseInt(activeStepsRes.rows[0]?.count ?? '0', 10);
+      if (activeStepsCount > 0) {
+        throw new ConflictException(
+          'Cannot deactivate member with active task steps. Please reassign their active steps first.',
+        );
+      }
+
+      // 3. Soft delete member
+      await c.query(
+        `UPDATE "user"
+            SET status = 'inactive', deleted_at = now()
+          WHERE id = $1 AND org_id = $2`,
+        [memberId, actor.orgId],
+      );
+
+      // 4. Audit
+      await this.writeAudit(c, {
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        action: 'member.deactivated',
+        targetType: 'user',
+        targetId: memberId,
+      });
+
+      return { message: 'Member deactivated successfully.' };
+    });
+  }
+
+  /**
+   * Calculates deletion impact statistics for a manager (Owner only).
+   */
+  async getManagerImpact(
+    actor: CurrentUser,
+    managerId: string,
+  ): Promise<{ memberCount: number; activeTaskCount: number; teamName: string }> {
+    return await this.db.tx(async (c) => {
+      // 1. Verify manager exists in org
+      const mgrRes = await c.query<{ id: string; name: string }>(
+        `SELECT id, name FROM "user" WHERE id = $1 AND org_id = $2 AND role = 'manager'`,
+        [managerId, actor.orgId],
+      );
+      if (mgrRes.rowCount === 0) {
+        throw new NotFoundException('Manager not found in your organization.');
+      }
+
+      // 2. Find active team
+      const teamRes = await c.query<{ id: string; name: string }>(
+        `SELECT id, name FROM team WHERE manager_id = $1 AND org_id = $2 AND status = 'active'`,
+        [managerId, actor.orgId],
+      );
+      const teamName = teamRes.rows[0]?.name ?? 'Unassigned Team';
+
+      // 3. Active members count
+      const membersRes = await c.query<{ count: string }>(
+        `SELECT count(*)::text as count FROM "user" WHERE manager_id = $1 AND org_id = $2 AND role = 'member' AND status = 'active'`,
+        [managerId, actor.orgId],
+      );
+      const memberCount = parseInt(membersRes.rows[0]?.count ?? '0', 10);
+
+      // 4. Active tasks count
+      const tasksRes = await c.query<{ count: string }>(
+        `SELECT count(*)::text as count FROM task WHERE manager_id = $1 AND org_id = $2 AND status IN ('scheduled', 'in_progress')`,
+        [managerId, actor.orgId],
+      );
+      const activeTaskCount = parseInt(tasksRes.rows[0]?.count ?? '0', 10);
+
+      return {
+        memberCount,
+        activeTaskCount,
+        teamName,
+      };
+    });
+  }
+
+  /**
+   * Cascading soft-delete for a manager, their team, and team members (Owner only).
+   */
+  async deleteManager(
+    actor: CurrentUser,
+    managerId: string,
+  ): Promise<{ message: string }> {
+    return await this.db.tx(async (c) => {
+      // 1. Verify manager exists in org
+      const mgrRes = await c.query<{ id: string; status: string }>(
+        `SELECT id, status FROM "user" WHERE id = $1 AND org_id = $2 AND role = 'manager'`,
+        [managerId, actor.orgId],
+      );
+      if (mgrRes.rowCount === 0) {
+        throw new NotFoundException('Manager not found in your organization.');
+      }
+
+      // 2. Guard: Check for active task steps across all team members and the manager
+      const activeStepsRes = await c.query<{
+        step_id: string;
+        task_id: string;
+        task_name: string;
+        user_id: string;
+        user_name: string;
+      }>(
+        `SELECT ts.id AS step_id,
+                ts.task_id,
+                t.name AS task_name,
+                u.id AS user_id,
+                u.name AS user_name
+           FROM task_step ts
+           JOIN task t ON t.id = ts.task_id
+           JOIN "user" u ON u.id = ts.assigned_user_id
+          WHERE (u.manager_id = $1 OR u.id = $1)
+            AND u.org_id = $2
+            AND ts.org_id = $2
+            AND t.org_id = $2
+            AND ts.status = 'active'`,
+        [managerId, actor.orgId],
+      );
+
+      if (activeStepsRes.rowCount && activeStepsRes.rowCount > 0) {
+        const affected = activeStepsRes.rows
+          .map((r) => `${r.user_name} (task: "${r.task_name}")`)
+          .join(', ');
+        throw new ConflictException(
+          `Cannot delete manager while team members hold active task steps. Please reassign active steps first. Affected: ${affected}`,
+        );
+      }
+
+      // 3. Cascade soft-delete
+      // Soft-delete manager
+      await c.query(
+        `UPDATE "user" SET status = 'inactive', deleted_at = now() WHERE id = $1 AND org_id = $2`,
+        [managerId, actor.orgId],
+      );
+      // Soft-delete manager's team
+      await c.query(
+        `UPDATE team SET status = 'deleted', deleted_at = now() WHERE manager_id = $1 AND org_id = $2`,
+        [managerId, actor.orgId],
+      );
+      // Soft-delete manager's team members
+      await c.query(
+        `UPDATE "user" SET status = 'inactive', deleted_at = now() WHERE manager_id = $1 AND org_id = $2 AND role = 'member'`,
+        [managerId, actor.orgId],
+      );
+
+      // 3. Audit
+      await this.writeAudit(c, {
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        action: 'manager.deleted',
+        targetType: 'user',
+        targetId: managerId,
+      });
+
+      return { message: 'Manager and associated team soft-deleted successfully.' };
+    });
+  }
+
+  /**
+   * Lists soft-deleted managers within the 30-day recovery window (Owner only).
+   */
+  async getDeletedManagers(actor: CurrentUser): Promise<Array<{
+    id: string;
+    name: string;
+    email: string;
+    teamName: string | null;
+    deletedAt: string;
+    expiresInDays: number;
+  }>> {
+    return await this.db.tx(async (c) => {
+      const res = await c.query<{
+        id: string;
+        name: string;
+        email: string;
+        team_name: string | null;
+        deleted_at: Date;
+        expires_in_days: number;
+      }>(
+        `SELECT u.id, u.name, u.email, u.deleted_at,
+                t.name as team_name,
+                GREATEST(0, 30 - EXTRACT(DAY FROM (now() - u.deleted_at)))::int as expires_in_days
+           FROM "user" u
+           LEFT JOIN team t ON t.manager_id = u.id
+          WHERE u.org_id = $1
+            AND u.role = 'manager'
+            AND u.status = 'inactive'
+            AND u.deleted_at IS NOT NULL
+            AND u.deleted_at >= now() - interval '30 days'
+          ORDER BY u.deleted_at DESC`,
+        [actor.orgId],
+      );
+
+      return res.rows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        teamName: r.team_name,
+        deletedAt: r.deleted_at.toISOString(),
+        expiresInDays: r.expires_in_days,
+      }));
+    });
+  }
+
+  /**
+   * Restores a soft-deleted manager, their team, and members (Owner only).
+   */
+  async restoreManager(
+    actor: CurrentUser,
+    managerId: string,
+  ): Promise<{ message: string }> {
+    return await this.db.tx(async (c) => {
+      // Check manager exists, inactive, deleted within 30 days
+      const mgrRes = await c.query<{ id: string; deleted_at: Date }>(
+        `SELECT id, deleted_at FROM "user"
+          WHERE id = $1 AND org_id = $2 AND role = 'manager' AND status = 'inactive'
+            AND deleted_at IS NOT NULL
+            AND deleted_at >= now() - interval '30 days'`,
+        [managerId, actor.orgId],
+      );
+      if (mgrRes.rowCount === 0) {
+        throw new BadRequestException(
+          'Manager cannot be restored or 30-day recovery window has expired.',
+        );
+      }
+
+      // Restore manager
+      await c.query(
+        `UPDATE "user" SET status = 'active', deleted_at = NULL WHERE id = $1 AND org_id = $2`,
+        [managerId, actor.orgId],
+      );
+      // Restore team
+      await c.query(
+        `UPDATE team SET status = 'active', deleted_at = NULL WHERE manager_id = $1 AND org_id = $2`,
+        [managerId, actor.orgId],
+      );
+      // Restore team members
+      await c.query(
+        `UPDATE "user" SET status = 'active', deleted_at = NULL WHERE manager_id = $1 AND org_id = $2 AND role = 'member'`,
+        [managerId, actor.orgId],
+      );
+
+      // Audit
+      await this.writeAudit(c, {
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        action: 'manager.restored',
+        targetType: 'user',
+        targetId: managerId,
+      });
+
+      return { message: 'Manager and team restored successfully.' };
+    });
   }
 }

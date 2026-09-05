@@ -8,10 +8,11 @@
  * route (RequireRole) — listManagers 403s for anyone else by design.
  */
 import { Link } from 'react-router-dom';
-import { Building2, Crown, UserPlus, Users, Activity, AlertTriangle, Trophy, CheckCircle2 } from 'lucide-react';
+import { Building2, Crown, UserPlus, Users, Activity, AlertTriangle, Trophy, CheckCircle2, Gauge } from 'lucide-react';
 import { listManagers, listTeams } from '../api/auth';
 import { getAnalyticsOverview, getBottlenecks } from '../api/analytics';
-import type { ManagerListRow, TeamListRow, AnalyticsOverview, BottlenecksResponse } from '../api/types';
+import { getQuotas } from '../api/quotas';
+import type { ManagerListRow, TeamListRow, AnalyticsOverview, BottlenecksResponse, QuotaUsage } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
 import { StatTile } from '../components/StatTile';
@@ -21,13 +22,14 @@ const MAX_CARDS = 6;
 
 export function Overview() {
   const { state } = useAsync(async () => {
-    const [teams, managers, analytics, bottlenecks] = await Promise.all([
+    const [teams, managers, analytics, bottlenecks, quotas] = await Promise.all([
       listTeams(),
       listManagers(),
       getAnalyticsOverview().catch(() => null),
       getBottlenecks().catch(() => null),
+      getQuotas().catch(() => null),
     ]);
-    return { teams, managers, analytics, bottlenecks };
+    return { teams, managers, analytics, bottlenecks, quotas };
   });
 
   return (
@@ -39,12 +41,13 @@ export function Overview() {
 
       <div className="mt-5">
         <AsyncView state={state}>
-          {({ teams, managers, analytics, bottlenecks }) => (
+          {({ teams, managers, analytics, bottlenecks, quotas }) => (
             <OverviewBody
               teams={teams}
               managers={managers}
               analytics={analytics}
               bottlenecks={bottlenecks}
+              quotas={quotas}
             />
           )}
         </AsyncView>
@@ -58,11 +61,13 @@ function OverviewBody({
   managers,
   analytics,
   bottlenecks,
+  quotas,
 }: {
   teams: TeamListRow[];
   managers: ManagerListRow[];
   analytics: AnalyticsOverview | null;
   bottlenecks: BottlenecksResponse | null;
+  quotas: QuotaUsage | null;
 }) {
   const membersCount = teams.reduce((sum, t) => sum + t.memberCount, 0);
 
@@ -147,6 +152,58 @@ function OverviewBody({
                 </span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {quotas && (
+        <div className="border-hairline mt-6 rounded-xl border bg-white p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-primary">
+              <Gauge size={16} />
+              <h2 className="font-display text-[15px] font-semibold text-[#161A22]">Organization Resource Quotas</h2>
+            </div>
+            <span className="text-[11px] font-medium text-[#68707C]">Standard Plan</span>
+          </div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-[#68707C]">Teams</span>
+                <span className="font-medium text-[#161A22]">{quotas.teams.current} / {quotas.teams.limit}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${Math.min(100, Math.round((quotas.teams.current / quotas.teams.limit) * 100))}%` }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-[#68707C]">Active Members</span>
+                <span className="font-medium text-[#161A22]">{quotas.members.current} / {quotas.members.limit}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full bg-[#00C875] rounded-full transition-all"
+                  style={{ width: `${Math.min(100, Math.round((quotas.members.current / quotas.members.limit) * 100))}%` }}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="flex justify-between text-xs mb-1.5">
+                <span className="text-[#68707C]">Active Tasks</span>
+                <span className="font-medium text-[#161A22]">{quotas.activeTasks.current} / {quotas.activeTasks.limit}</span>
+              </div>
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                <div
+                  className="h-full bg-[#FDAB3D] rounded-full transition-all"
+                  style={{ width: `${Math.min(100, Math.round((quotas.activeTasks.current / quotas.activeTasks.limit) * 100))}%` }}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -13,13 +13,21 @@ import { StatusChip } from './StatusChip';
 import type { MemberRow } from '../api/types';
 import { fmtDateTime } from '../lib/format';
 
-export function MemberRoster({ members }: { members: MemberRow[] }) {
+import { UserMinus } from 'lucide-react';
+
+export function MemberRoster({
+  members,
+  onDeactivate,
+}: {
+  members: MemberRow[];
+  onDeactivate?: (member: MemberRow) => void;
+}) {
   return (
     <div className="border-hairline overflow-hidden rounded-xl border bg-white">
       {members.map((member) => (
         <div
           key={member.id}
-          className="border-hairline flex items-center gap-3 border-b px-4 py-3 last:border-0"
+          className="border-hairline flex items-center gap-3 border-b px-4 py-3 last:border-0 hover:bg-gray-50/50 transition"
         >
           <Avatar name={member.name} size={32} />
           <div className="min-w-0 flex-1">
@@ -30,6 +38,16 @@ export function MemberRoster({ members }: { members: MemberRow[] }) {
             joined {fmtDateTime(member.createdAt)}
           </div>
           <MemberChip member={member} />
+          {onDeactivate && member.status === 'active' && (
+            <button
+              type="button"
+              onClick={() => onDeactivate(member)}
+              title="Deactivate member"
+              className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition"
+            >
+              <UserMinus size={15} />
+            </button>
+          )}
         </div>
       ))}
     </div>

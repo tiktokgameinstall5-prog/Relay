@@ -15,7 +15,7 @@
  */
 import { useState, type FormEvent } from 'react';
 import { Building2 } from 'lucide-react';
-import { createMember, createTeam, listTeamMembers, listTeams } from '../api/auth';
+import { createMember, createTeam, deactivateMember, listTeamMembers, listTeams } from '../api/auth';
 import { ApiError } from '../api/client';
 import type { MemberProvisioned, MemberRow, TeamListRow } from '../api/types';
 import { useAsync } from '../lib/useAsync';
@@ -39,6 +39,7 @@ export function MyTeam() {
   // mounted across the reload. This mirrors Managers.tsx exactly.
   const [showAdd, setShowAdd] = useState(false);
   const [lastAdded, setLastAdded] = useState<MemberProvisioned | null>(null);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
 
   const { state, reload } = useAsync(async () => {
     const teams = await listTeams();
@@ -50,10 +51,33 @@ export function MyTeam() {
     return { team, members };
   });
 
+  const handleDeactivate = async (member: MemberRow) => {
+    setDeactivateError(null);
+    if (!window.confirm(`Are you sure you want to deactivate ${member.name}?`)) return;
+    try {
+      await deactivateMember(member.id);
+      reload();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setDeactivateError(
+          'Cannot deactivate member with active task steps. Please reassign their active steps first.',
+        );
+      } else {
+        setDeactivateError((err as Error).message || 'Failed to deactivate member.');
+      }
+    }
+  };
+
   return (
     <div className="mx-auto max-w-3xl">
       <h1 className="font-display text-xl font-semibold">My team</h1>
       <p className="text-muted mt-0.5 text-sm">The one team you run.</p>
+
+      {deactivateError !== null && (
+        <div className="mt-4">
+          <Alert>{deactivateError}</Alert>
+        </div>
+      )}
 
       {lastAdded !== null && (
         <div className="mt-5">
@@ -72,7 +96,12 @@ export function MyTeam() {
             team === null ? (
               <CreateTeamCard onCreated={reload} />
             ) : (
-              <TeamBody team={team} members={members} onAdd={() => setShowAdd(true)} />
+              <TeamBody
+                team={team}
+                members={members}
+                onAdd={() => setShowAdd(true)}
+                onDeactivate={handleDeactivate}
+              />
             )
           }
         </AsyncView>
@@ -156,10 +185,12 @@ function TeamBody({
   team,
   members,
   onAdd,
+  onDeactivate,
 }: {
   team: TeamListRow;
   members: MemberRow[];
   onAdd: () => void;
+  onDeactivate?: (member: MemberRow) => void;
 }) {
   // Matches TeamDetail: a deactivated member still appears (CLAUDE.md §5), so the
   // Members tile counts only active ones; pending = invites not yet activated.
@@ -190,7 +221,7 @@ function TeamBody({
           </p>
         </Panel>
       ) : (
-        <MemberRoster members={members} />
+        <MemberRoster members={members} onDeactivate={onDeactivate} />
       )}
     </>
   );

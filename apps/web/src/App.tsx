@@ -25,6 +25,8 @@ import { MyTeam } from './screens/MyTeam';
 import { Tasks } from './screens/Tasks';
 import { Rankings } from './screens/Rankings';
 import { Reports } from './screens/Reports';
+import { AuditLogs } from './screens/AuditLogs';
+import { ForgotPasscode } from './screens/ForgotPasscode';
 import type { UserRole } from './api/types';
 
 /** The dashboard a signed-in user lands on, by role. Every target is a route
@@ -65,6 +67,8 @@ export function App() {
           <Route path="/signup" element={<Signup />} />
           <Route path="/login" element={<Login />} />
           <Route path="/invite" element={<Invite />} />
+          <Route path="/first-login" element={<Invite />} />
+          <Route path="/forgot-passcode" element={<ForgotPasscode />} />
 
           <Route
             element={
@@ -116,6 +120,14 @@ export function App() {
             />
             <Route path="/rankings" element={<Rankings />} />
             <Route path="/reports" element={<Reports />} />
+            <Route
+              path="/audit-logs"
+              element={
+                <RequireRole role="owner">
+                  <AuditLogs />
+                </RequireRole>
+              }
+            />
           </Route>
 
           <Route path="*" element={<Navigate to="/" replace />} />

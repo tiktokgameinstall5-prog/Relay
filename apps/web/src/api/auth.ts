@@ -13,6 +13,8 @@
 import { request } from './client';
 import type {
   AuthResult,
+  DeletedManager,
+  ManagerImpactStats,
   ManagerListRow,
   ManagerProvisioned,
   MemberProvisioned,
@@ -133,4 +135,44 @@ export function listManagers(): Promise<ManagerListRow[]> {
  */
 export function listTeamMembers(teamId: string): Promise<MemberRow[]> {
   return request<MemberRow[]>(`/auth/teams/${encodeURIComponent(teamId)}/members`);
+}
+
+/** GET /api/auth/managers/:id/impact — Owner only pre-deletion impact analysis */
+export function getManagerImpact(managerId: string): Promise<ManagerImpactStats> {
+  return request<ManagerImpactStats>(`/auth/managers/${encodeURIComponent(managerId)}/impact`);
+}
+
+/** DELETE /api/auth/managers/:id — Owner only cascading soft delete */
+export function deleteManager(managerId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/auth/managers/${encodeURIComponent(managerId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** GET /api/auth/managers/deleted — Owner only 30-day recoverable managers */
+export function getDeletedManagers(): Promise<DeletedManager[]> {
+  return request<DeletedManager[]>('/auth/managers/deleted');
+}
+
+/** POST /api/auth/managers/:id/restore — Owner only 1-click restore */
+export function restoreManager(managerId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/auth/managers/${encodeURIComponent(managerId)}/restore`, {
+    method: 'POST',
+  });
+}
+
+/** DELETE /api/auth/members/:id — Owner or Manager soft deactivation */
+export function deactivateMember(memberId: string): Promise<{ message: string }> {
+  return request<{ message: string }>(`/auth/members/${encodeURIComponent(memberId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** POST /api/auth/passcode/request-reset — Public rate-limited passcode recovery */
+export function requestPasscodeReset(email: string): Promise<{ message: string }> {
+  return request<{ message: string }>('/auth/passcode/request-reset', {
+    method: 'POST',
+    body: { email },
+    authenticated: false,
+  });
 }

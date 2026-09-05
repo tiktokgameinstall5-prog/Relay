@@ -10,10 +10,13 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
+  ParseUUIDPipe,
   Post,
   Res,
   UseGuards,
@@ -122,6 +125,48 @@ export class ManagerController {
   @Get('managers')
   listManagers(): Promise<ManagerListRow[]> {
     return this.directory.listManagers();
+  }
+
+  @ApiOperation({ summary: 'List soft-deleted managers within 30-day recovery window (Owner only)' })
+  @ApiBearerAuth()
+  @Roles('owner')
+  @Get('managers/deleted')
+  getDeletedManagers(@CurrentUser() actor: CurrentUserType) {
+    return this.auth.getDeletedManagers(actor);
+  }
+
+  @ApiOperation({ summary: 'Calculate deletion impact statistics for a manager (Owner only)' })
+  @ApiBearerAuth()
+  @Roles('owner')
+  @Get('managers/:id/impact')
+  getManagerImpact(
+    @CurrentUser() actor: CurrentUserType,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.auth.getManagerImpact(actor, id);
+  }
+
+  @ApiOperation({ summary: 'Soft-delete a manager, their active team, and members (Owner only)' })
+  @ApiBearerAuth()
+  @Roles('owner')
+  @Delete('managers/:id')
+  deleteManager(
+    @CurrentUser() actor: CurrentUserType,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.auth.deleteManager(actor, id);
+  }
+
+  @ApiOperation({ summary: 'Restore a soft-deleted manager, team, and members (Owner only)' })
+  @ApiBearerAuth()
+  @Roles('owner')
+  @Post('managers/:id/restore')
+  @HttpCode(HttpStatus.OK)
+  restoreManager(
+    @CurrentUser() actor: CurrentUserType,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.auth.restoreManager(actor, id);
   }
 
   /**

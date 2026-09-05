@@ -4,17 +4,16 @@ Update this file at the end of every session, and re-read it at the start of the
 (along with CLAUDE.md). This file — not the chat history — is the record of what's done.
 
 ## Current phase
-Phase 5 — Rankings, Reporter Workflow, and Time-Tracking Analytics (COMPLETE — Full-stack implementation verified and committed on `feat/phase5-rankings-reporter`).
+Phase 6 — Polish, Hardening, Soft-Delete Retention & Recovery, Passcode Recovery, Audit Logs & Quotas (COMPLETE — Full-stack implementation verified and committed).
 
 **Backend & Isolation Gates:**
-- `Phase 5 Backend Suites`: **39 / 39 passed** across 4 suites (`ranking-rls.e2e-spec.ts` [8], `ranking-isolation.e2e-spec.ts` [11], `report-rls.e2e-spec.ts` [9], `report-isolation.e2e-spec.ts` [11]).
-- `Sabotage Verification 1 (Reporter Role Gate)`: Mutated `isReporter` check to allow non-reporters $\rightarrow$ RED (`Expected: 403, Received: 201`); Revert $\rightarrow$ GREEN (`403 Forbidden`).
-- `Sabotage Verification 2 (Mandatory Reason DB Constraint)`: Mutated reason to empty string `''` $\rightarrow$ DB-level rejection via `CHECK (length(trim(reason)) > 0)` constraint (`23514`).
-- `test:isolation`: **217 / 217 passed** across all 12 backend isolation/RLS suites.
-- `test:web`: **42 / 42 passed** across all 5 frontend test suites (`NotificationBell.test.tsx` [6], `AppShell.test.tsx` [5], `Tasks.test.tsx` [15], `Rankings.test.tsx` [9], `Reports.test.tsx` [7]).
-- `web typecheck & build`: Clean (0 TypeScript errors, 1834 modules built in 2.24s).
-- **Ranking Audit History Privacy**: Strictly enforced; Members can view only their own ranking history; querying peer history returns uniform anti-oracle `404 Not Found`.
-- **Reporter Workflow Gate**: Submitting task completion report strictly gated to task completion status (`status === 'completed'`) and designated reporter or manager/owner role.
+- `test:isolation`: **240 / 240 passed** across all 14 backend isolation/RLS suites.
+- `test:e2e`: **397 / 397 passed** across all 23 e2e test suites.
+- `apps/web test`: **47 / 47 passed** across all 7 frontend test files (`Notifications`, `AppShell`, `Tasks`, `Rankings`, `Reports`, `AuditLogs`, `ForgotPasscode`).
+- `Sabotage Verification 1 (deleteManager Active-Step Invariant)`: Mutated check to bypass active step count $\rightarrow$ RED (`Expected: 409, Received: 200`); Revert $\rightarrow$ GREEN (`409 Conflict`).
+- `Sabotage Verification 2 (ranking_event RLS Role-Branched Isolation)`: Direct raw SQL query as Member A2 under old policy leaked Member A1's confidential audit event $\rightarrow$ RED; under Migration 0011 returned 0 rows $\rightarrow$ GREEN.
+- **Quota Route Security**: `GET /api/quotas` strictly Owner-only via `@Roles('owner')`; Managers and Members receive `403 Forbidden`.
+- **Passcode Reset Session Safety**: Triggering passcode reset revokes all active refresh-token sessions immediately so compromised sessions cannot survive.
 
 ## Phase checklist
 
@@ -62,7 +61,15 @@ Phase 5 — Rankings, Reporter Workflow, and Time-Tracking Analytics (COMPLETE �
   - [x] frontend screens (`Rankings.tsx`, `Reports.tsx`), navigation routing, analytics summary on `Overview.tsx`
   - [x] frontend unit test suites (`Rankings.test.tsx`, `Reports.test.tsx`)
   - [x] **Defense-in-depth RLS hardening**: Migration `0011_ranking_event_member_isolation.sql` branches `ranking_event_tenant_isolation` by role (`owner` -> org, `manager` -> team slice, `member` -> `user_id = app_current_user_id()`), guaranteeing DB engine-level prevention of teammate history leakage if queried directly via SQL, backed by DB sabotage test proof (`sabotage-ranking-rls.ts`) and updated `ranking-rls.e2e-spec.ts`.
-- [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)
+- [x] Phase 6 — Polish (audit log views, quotas, soft-delete retention & 30-day recovery, self-service passcode recovery)
+  - [x] Soft-delete cascade on manager deletion (`deleteManager`), team, and members with 30-day retention and one-click restore (`restoreManager`)
+  - [x] Active task step guard on `deleteManager` blocking cascading deletion with 409 Conflict if any team member holds an active task step
+  - [x] Soft-deactivation for members (`deactivateMember`) with active task step reassign guard (409 Conflict) and manager team-slice check
+  - [x] Self-service passcode recovery (`requestPasscodeReset`) with anti-oracle timing equalization, `LoginThrottlerGuard` (5 / 15 min), and complete active refresh-token session revocation
+  - [x] Organization audit log module (`GET /api/audit-logs`) with Owner-only RBAC, tenant RLS isolation, pagination, and multi-criteria filters
+  - [x] Organization quotas (`GET /api/quotas`) with Owner-only `@Roles('owner')` gating, reporting active resource counts against tenant limits
+  - [x] Frontend screens: `AuditLogs.tsx` with date/action filters and pagination, `ForgotPasscode.tsx`, 30-day manager recovery queue on `Managers.tsx`, and quota stats on `Overview.tsx`
+  - [x] Dual-layer tests: `soft-delete-isolation.e2e-spec.ts` (15 tests) + `audit-rls.e2e-spec.ts` (8 tests)
 
 ## Production hardening TODO (must be resolved before launch)
 

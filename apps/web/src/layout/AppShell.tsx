@@ -26,6 +26,7 @@ import {
   LayoutDashboard,
   LogOut,
   MessageSquare,
+  ShieldAlert,
   Trophy,
   Users,
   type LucideIcon,
@@ -50,6 +51,7 @@ const NAV: Record<UserRole, NavItem[]> = {
     { to: '/teams', label: 'All teams', icon: Building2 },
     { to: '/tasks', label: 'All tasks', icon: ClipboardList },
     { to: '/reports', label: 'Reports', icon: MessageSquare },
+    { to: '/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
   ],
   manager: [
     { to: '/team', label: 'My team', icon: Users },

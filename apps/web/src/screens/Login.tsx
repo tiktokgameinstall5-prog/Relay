@@ -58,6 +58,10 @@ export function Login() {
           <Link to="/invite" className="text-signal font-medium">
             Use your passcode
           </Link>
+          {' · '}
+          <Link to="/forgot-passcode" className="text-signal font-medium">
+            Forgot passcode?
+          </Link>
           <br />
           <span className="text-[#9AA1AC]">
             Creating a new organization? <Link to="/signup" className="text-signal">Sign up</Link>

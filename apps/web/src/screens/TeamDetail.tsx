@@ -1,21 +1,11 @@
 /**
  * A single team's drill-down: the team header (name + manager) over its roster.
- *
- * Two reads in parallel: GET /api/auth/teams for the header (the members endpoint
- * returns only member rows, no team/manager metadata) and
- * /api/auth/teams/:id/members for the roster. A cross-tenant or unknown :id is the
- * server's byte-identical 404 (@OwnedResource), which surfaces as the error card;
- * a soft-deleted or otherwise unseen team is absent from listTeams, so `team` is
- * null and we render "not found" rather than a header with no name.
- *
- * The roster is NOT status-filtered server-side, so a deactivated member still
- * appears here (CLAUDE.md §5: keep them attributed, labelled "Deactivated"). The
- * Members tile therefore counts only the active ones, matching the count shown on
- * the card the owner clicked to get here.
  */
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, Crown } from 'lucide-react';
-import { listTeamMembers, listTeams } from '../api/auth';
+import { deactivateMember, listTeamMembers, listTeams } from '../api/auth';
+import { ApiError } from '../api/client';
 import type { MemberRow, TeamListRow } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
@@ -23,16 +13,33 @@ import { Avatar } from '../components/Avatar';
 import { StatTile } from '../components/StatTile';
 import { MemberRoster } from '../components/MemberRoster';
 import { Panel } from '../components/Panel';
+import { Alert } from '../components/Alert';
 
 export function TeamDetail() {
-  // The route is /teams/:teamId, so teamId is always present; the default only
-  // satisfies useParams' string | undefined without a conditional hook call.
   const { teamId = '' } = useParams();
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
 
-  const { state } = useAsync(async () => {
+  const { state, reload } = useAsync(async () => {
     const [teams, members] = await Promise.all([listTeams(), listTeamMembers(teamId)]);
     return { team: teams.find((t) => t.id === teamId) ?? null, members };
   }, teamId);
+
+  const handleDeactivate = async (member: MemberRow) => {
+    setDeactivateError(null);
+    if (!window.confirm(`Are you sure you want to deactivate ${member.name}?`)) return;
+    try {
+      await deactivateMember(member.id);
+      reload();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setDeactivateError(
+          'Cannot deactivate member with active task steps. Please reassign their active steps first.',
+        );
+      } else {
+        setDeactivateError((err as Error).message || 'Failed to deactivate member.');
+      }
+    }
+  };
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -43,16 +50,38 @@ export function TeamDetail() {
         <ArrowLeft size={14} /> All teams
       </Link>
 
+      {deactivateError !== null && (
+        <div className="mb-4">
+          <Alert>{deactivateError}</Alert>
+        </div>
+      )}
+
       <AsyncView state={state}>
         {({ team, members }) =>
-          team === null ? <NotFound /> : <TeamBody team={team} members={members} />
+          team === null ? (
+            <NotFound />
+          ) : (
+            <TeamBody
+              team={team}
+              members={members}
+              onDeactivate={handleDeactivate}
+            />
+          )
         }
       </AsyncView>
     </div>
   );
 }
 
-function TeamBody({ team, members }: { team: TeamListRow; members: MemberRow[] }) {
+function TeamBody({
+  team,
+  members,
+  onDeactivate,
+}: {
+  team: TeamListRow;
+  members: MemberRow[];
+  onDeactivate?: (member: MemberRow) => void;
+}) {
   const activeCount = members.filter((m) => m.status === 'active').length;
   const pendingCount = members.filter((m) => m.pendingInvite).length;
 
@@ -85,7 +114,7 @@ function TeamBody({ team, members }: { team: TeamListRow; members: MemberRow[] }
           </p>
         </Panel>
       ) : (
-        <MemberRoster members={members} />
+        <MemberRoster members={members} onDeactivate={onDeactivate} />
       )}
     </>
   );

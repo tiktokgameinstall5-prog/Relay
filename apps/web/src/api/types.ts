@@ -355,3 +355,59 @@ export interface BottlenecksResponse {
   bottlenecks: BottleneckStep[];
   averageStepDurationSeconds: number;
 }
+
+/** Phase 6 — Polish & Hardening shapes */
+
+export interface AuditLogItem {
+  id: string;
+  orgId: string;
+  userId: string | null;
+  userName?: string | null;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  metadata: Record<string, unknown> | null;
+  ipAddress: string | null;
+  createdAt: string;
+}
+
+export interface AuditLogListResponse {
+  items: AuditLogItem[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface ManagerImpactStats {
+  memberCount: number;
+  activeTaskCount: number;
+  teamName: string;
+}
+
+export interface DeletedManager {
+  id: string;
+  name: string;
+  email: string;
+  teamName: string | null;
+  deletedAt: string;
+  expiresInDays: number;
+}
+
+export interface QuotaUsage {
+  teams: {
+    current: number;
+    limit: number;
+  };
+  members: {
+    current: number;
+    limit: number;
+  };
+  activeTasks: {
+    current: number;
+    limit: number;
+  };
+}
+
+export interface RequestPasscodeResetInput {
+  email: string;
+}

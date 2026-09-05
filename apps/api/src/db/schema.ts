@@ -117,6 +117,7 @@ export const user = pgTable(
 
     // Soft delete only — never hard-delete a user (spec §9.1).
     status: userStatusEnum('status').notNull().default('active'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

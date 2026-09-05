@@ -16,9 +16,12 @@
 import {
   Body,
   Controller,
+  Delete,
   HttpCode,
   HttpStatus,
   Inject,
+  Param,
+  ParseUUIDPipe,
   Post,
   Res,
   UseGuards,
@@ -103,6 +106,23 @@ export class MemberController {
   @Post('members')
   createMember(@CurrentUser() actor: CurrentUserType, @Body() dto: CreateMemberDto) {
     return this.auth.createMember(actor, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Deactivate a member',
+    description:
+      'Owner or Manager. Deactivates a member in the tenant slice. ' +
+      'Blocked with 409 Conflict if member currently holds active task steps.',
+  })
+  @ApiBearerAuth()
+  @ApiConflictResponse({ description: 'Member holds active task steps.' })
+  @Roles('owner', 'manager')
+  @Delete('members/:id')
+  deleteMember(
+    @CurrentUser() actor: CurrentUserType,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.auth.deactivateMember(actor, id);
   }
 
   /**

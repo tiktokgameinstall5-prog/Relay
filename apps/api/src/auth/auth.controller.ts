@@ -26,6 +26,7 @@ import { AuthService, type AuthResult } from './auth.service';
 import { OwnerSignupDto } from './dto/signup.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh.dto';
+import { RequestPasscodeResetDto } from './dto/request-passcode-reset.dto';
 import { AuthResultDto } from './dto/api-response.dto';
 import { Public } from './decorators/public.decorator';
 import { LoginThrottlerGuard } from './guards/login-throttler.guard';
@@ -216,5 +217,29 @@ export class AuthController {
     const token = dto.refreshToken ?? readRefreshCookie(req);
     if (token) await this.auth.logout(token);
     clearRefreshCookie(res);
+  }
+
+  @ApiOperation({
+    summary: 'Request a passcode reset for an invited manager or member',
+    description:
+      'Public endpoint. Sends a new single-use passcode to the user email if an eligible ' +
+      'manager or member account exists. Returns the same success message regardless of existence ' +
+      'to prevent account enumeration.',
+  })
+  @ApiOkResponse({
+    description: 'Generic success response indicating dispatch if account exists.',
+  })
+  @ApiTooManyRequestsResponse({
+    description: '5 attempts per 15 minutes, keyed on email + IP.',
+  })
+  @Public()
+  @SkipThrottle({ signup: true, provisioning: true })
+  @UseGuards(LoginThrottlerGuard)
+  @HttpCode(HttpStatus.OK)
+  @Post('passcode/request-reset')
+  async requestPasscodeReset(
+    @Body() dto: RequestPasscodeResetDto,
+  ): Promise<{ message: string }> {
+    return this.auth.requestPasscodeReset(dto.email);
   }
 }

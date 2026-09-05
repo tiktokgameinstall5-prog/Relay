@@ -16,6 +16,8 @@ import { SchedulerModule } from './scheduler/scheduler.module';
 import { RankingModule } from './ranking/ranking.module';
 import { ReportModule } from './report/report.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AuditModule } from './audit/audit.module';
+import { QuotaModule } from './quota/quota.module';
 
 @Module({
   imports: [
@@ -72,6 +74,8 @@ import { AnalyticsModule } from './analytics/analytics.module';
     RankingModule,
     ReportModule,
     AnalyticsModule,
+    AuditModule,
+    QuotaModule,
   ],
   providers: [
     // Global guards run in registration order, so this sequence is load-bearing:
