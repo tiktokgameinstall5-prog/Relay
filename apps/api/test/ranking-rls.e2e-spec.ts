@@ -4,7 +4,7 @@
  *
  * Proves:
  *   1. Manager A cannot see, read by ID, or access Manager B's ranking events.
- *   2. Member A1 sees all ranking events in their own team's slice, but cannot see Manager B's ranking events.
+ *   2. Member A1 sees only their own ranking events; Member A2 cannot see Member A1's events (role-branched RLS).
  *   3. Owner sees all ranking events in their own org (Org 1), but cannot reach Org 2.
  *   4. Context-free (unauthenticated) queries return zero rows.
  *   5. Composite FKs reject cross-tenant references (e.g. ranking_event in Org 1 pointing to user in Org 2).
@@ -95,12 +95,22 @@ describe('Ranking RLS — Database layer', () => {
     });
   });
 
-  it('Member A1 sees team A ranking events but cannot see Manager B or Org 2 ranking events', async () => {
+  it('Member A1 sees only their own ranking events (not other teams or orgs)', async () => {
     await withTenant(ctxFor(fx.memberA1), async (c) => {
       const { rows } = await c.query<{ id: string }>(
         'SELECT id FROM ranking_event ORDER BY created_at ASC',
       );
       expect(rows.map((r) => r.id)).toEqual([rf.eventAId]);
+    });
+  });
+
+  it('Member A2 cannot see Member A1 ranking events on the same team (role-branched RLS isolation)', async () => {
+    await withTenant(ctxFor(fx.memberA2), async (c) => {
+      const { rows } = await c.query<{ id: string }>(
+        'SELECT id FROM ranking_event WHERE id = $1',
+        [rf.eventAId],
+      );
+      expect(rows).toHaveLength(0);
     });
   });
 

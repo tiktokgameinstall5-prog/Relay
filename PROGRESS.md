@@ -61,7 +61,7 @@ Phase 5 — Rankings, Reporter Workflow, and Time-Tracking Analytics (COMPLETE �
   - [x] dual-layer tests: 17 DB RLS (`ranking-rls`, `report-rls`) + 22 HTTP isolation (`ranking-isolation`, `report-isolation`)
   - [x] frontend screens (`Rankings.tsx`, `Reports.tsx`), navigation routing, analytics summary on `Overview.tsx`
   - [x] frontend unit test suites (`Rankings.test.tsx`, `Reports.test.tsx`)
-- [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)
+  - [x] **Defense-in-depth RLS hardening**: Migration `0011_ranking_event_member_isolation.sql` branches `ranking_event_tenant_isolation` by role (`owner` -> org, `manager` -> team slice, `member` -> `user_id = app_current_user_id()`), guaranteeing DB engine-level prevention of teammate history leakage if queried directly via SQL, backed by DB sabotage test proof (`sabotage-ranking-rls.ts`) and updated `ranking-rls.e2e-spec.ts`.
 - [ ] Phase 6 — Polish (audit log views, quotas, 2FA, mobile pass)
 
 ## Production hardening TODO (must be resolved before launch)
