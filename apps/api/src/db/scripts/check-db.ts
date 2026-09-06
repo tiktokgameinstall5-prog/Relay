@@ -37,7 +37,14 @@ function requireEnv(name: string): string {
 }
 
 async function withClient<T>(url: string, fn: (c: Client) => Promise<T>): Promise<T> {
-  const client = new Client({ connectionString: url });
+  const isSsl =
+    url.includes('sslmode=') ||
+    url.includes('supabase.co') ||
+    (process.env.NODE_ENV === 'production' && !url.includes('localhost'));
+  const client = new Client({
+    connectionString: url,
+    ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
   await client.connect();
   try {
     return await fn(client);

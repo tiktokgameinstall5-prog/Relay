@@ -31,7 +31,15 @@ function requireEnv(name: string): string {
 }
 
 async function main() {
-  const client = new Client({ connectionString: requireEnv('MIGRATION_DATABASE_URL') });
+  const connStr = requireEnv('MIGRATION_DATABASE_URL');
+  const isSsl =
+    connStr.includes('sslmode=') ||
+    connStr.includes('supabase.co') ||
+    (process.env.NODE_ENV === 'production' && !connStr.includes('localhost'));
+  const client = new Client({
+    connectionString: connStr,
+    ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
   await client.connect();
 
   try {

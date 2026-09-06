@@ -32,9 +32,15 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
 
   constructor(@Inject(ConfigService) config: ConfigService) {
     const env = appEnv(config);
-    // DATABASE_URL is the relay_app role. env.validation.ts refuses to boot if
-    // it points at relay_migrator, which owns the tables and holds DDL rights.
-    this.pool = new Pool({ connectionString: env.DATABASE_URL, max: 10 });
+    const isSsl =
+      env.DATABASE_URL.includes('sslmode=') ||
+      env.DATABASE_URL.includes('supabase.co') ||
+      (env.NODE_ENV === 'production' && !env.DATABASE_URL.includes('localhost'));
+    this.pool = new Pool({
+      connectionString: env.DATABASE_URL,
+      max: 10,
+      ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+    });
   }
 
   async onModuleInit(): Promise<void> {
