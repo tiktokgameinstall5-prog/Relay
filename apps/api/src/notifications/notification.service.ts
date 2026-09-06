@@ -3,12 +3,16 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DbService } from '../db/db.service';
 import type { CurrentUser } from '../db/tenant-context';
 import { MailerService } from '../mail/mailer.service';
+import { appEnv } from '../config/configuration';
+import { renderTaskNotificationEmail } from '../mail/templates/task-notification';
 import {
   NotificationListResponseDto,
   NotificationQueryDto,
@@ -52,6 +56,7 @@ export class NotificationService {
   constructor(
     @Inject(DbService) private readonly db: DbService,
     @Inject(MailerService) private readonly mailer: MailerService,
+    @Optional() @Inject(ConfigService) private readonly config?: ConfigService,
   ) {}
 
   /**
@@ -86,11 +91,24 @@ export class NotificationService {
 
       // Trigger email if email recipient is provided
       if (item.emailTo) {
+        const appBaseUrl = this.config
+          ? appEnv(this.config).APP_BASE_URL
+          : (process.env.APP_BASE_URL || 'http://localhost:5173');
+        const actionUrl = `${appBaseUrl}/tasks`;
+        const { subject, text, html } = renderTaskNotificationEmail({
+          title: item.title,
+          body: item.emailBody ?? item.body,
+          subject: item.emailSubject,
+          actionUrl,
+          statusBadge: item.type.replace(/_/g, ' '),
+        });
+
         this.mailer
           .send({
             to: item.emailTo,
-            subject: item.emailSubject ?? item.title,
-            text: item.emailBody ?? item.body,
+            subject,
+            text,
+            html,
           })
           .catch((err) =>
             this.logger.warn(`Failed to dispatch email to ${item.emailTo}:`, err),

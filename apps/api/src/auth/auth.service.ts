@@ -40,6 +40,7 @@ import type { FirstLoginDto } from './dto/first-login.dto';
 import { MailerService } from '../mail/mailer.service';
 import { generatePasscode } from './passcode';
 import { renderInviteEmail } from '../mail/templates/invite';
+import { renderPasscodeResetEmail } from '../mail/templates/passcode-reset';
 
 /** Postgres unique-violation. Thrown by the (org_id, email) index. */
 const PG_UNIQUE_VIOLATION = '23505';
@@ -1132,14 +1133,14 @@ export class AuthService {
   }): Promise<boolean> {
     try {
       const inviteLink = `${this.appBaseUrl}/invite?email=${encodeURIComponent(params.to)}`;
-      const { subject, text } = renderInviteEmail({
+      const { subject, text, html } = renderInviteEmail({
         recipientName: params.recipientName,
         organizationName: params.organizationName,
         passcode: params.passcode,
         inviteLink,
         ttlHours: this.passcodeTtlHours,
       });
-      await this.mailer.send({ to: params.to, subject, text });
+      await this.mailer.send({ to: params.to, subject, text, html });
       return true;
     } catch (err) {
       this.logger.error(
@@ -1276,16 +1277,18 @@ export class AuthService {
 
     // Send email
     try {
+      const resetLink = `${this.appBaseUrl}/first-login?email=${encodeURIComponent(normalizedEmail)}`;
+      const { subject, text, html } = renderPasscodeResetEmail({
+        recipientName: userName,
+        passcode,
+        resetLink,
+        ttlHours: this.passcodeTtlHours,
+      });
       await this.mailer.send({
         to: normalizedEmail,
-        subject: 'Your Relay Passcode Reset',
-        text:
-          `Hello ${userName},\n\n` +
-          `A passcode reset was requested for your Relay account.\n` +
-          `Your new single-use passcode is: ${passcode}\n\n` +
-          `This passcode expires in ${this.passcodeTtlHours} hours.\n` +
-          `Use it to sign in at: ${this.appBaseUrl}/first-login\n\n` +
-          `If you did not request this, you can ignore this email.`,
+        subject,
+        text,
+        html,
       });
     } catch (err) {
       this.logger.error(`Failed to send passcode reset email: ${(err as Error).message}`);

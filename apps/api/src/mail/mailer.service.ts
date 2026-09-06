@@ -34,12 +34,14 @@ export class MailerService {
   private readonly logger = new Logger(MailerService.name);
   private readonly driver: MailDriver;
   private readonly from: string;
+  private readonly isDevelopment: boolean;
   private readonly transporter?: Transporter;
 
   constructor(@Inject(ConfigService) config: ConfigService) {
     const env = appEnv(config);
     this.driver = env.MAIL_DRIVER;
     this.from = env.MAIL_FROM;
+    this.isDevelopment = env.NODE_ENV !== 'production';
 
     if (this.driver === 'smtp') {
       const port = env.SMTP_PORT ?? 587;
@@ -114,6 +116,12 @@ export class MailerService {
       this.logger.error(
         `SMTP send failure to "${msg.to}": ${(err as Error).message}`,
       );
+      if (this.isDevelopment) {
+        this.logger.warn(
+          `[Development Fallback] SMTP delivery failed. Logging invite message to console:`,
+        );
+        this.sendToConsole(msg);
+      }
       throw err;
     }
   }

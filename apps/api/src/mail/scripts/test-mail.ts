@@ -9,6 +9,7 @@
  */
 import nodemailer from 'nodemailer';
 import { validateEnv } from '../../config/env.validation';
+import { renderInviteEmail } from '../templates/invite';
 
 async function main() {
   console.log('--- Outbound Mail Diagnostic & Test ---');
@@ -46,14 +47,23 @@ async function main() {
     return;
   }
 
+  const inviteLink = `${env.APP_BASE_URL || 'http://localhost:5173'}/invite?email=${encodeURIComponent(recipient)}`;
+  const sampleEmail = renderInviteEmail({
+    recipientName: recipient.split('@')[0],
+    organizationName: 'Acme Operations',
+    passcode: 'DEMO-7842',
+    inviteLink,
+    ttlHours: 72,
+  });
+
   if (env.MAIL_DRIVER === 'console') {
     console.log(`\n⚠️  MAIL_DRIVER is set to "console". Emails are logged to terminal only.`);
     console.log(`To send real emails, set MAIL_DRIVER=smtp in apps/api/.env with your provider credentials.`);
     console.log(`\nSample Message Output:`);
     console.log(`From:    ${env.MAIL_FROM}`);
     console.log(`To:      ${recipient}`);
-    console.log(`Subject: Relay Outbound Email Test`);
-    console.log(`Text:    This is a test email dispatched from Relay console driver.\n`);
+    console.log(`Subject: ${sampleEmail.subject}`);
+    console.log(`Text:\n${sampleEmail.text}\n`);
     return;
   }
 
@@ -77,30 +87,14 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`Sending test email to ${recipient}...`);
+  console.log(`Sending branded invitation & activation email to ${recipient}...`);
   try {
     const info = await transporter.sendMail({
       from: env.MAIL_FROM,
       to: recipient,
-      subject: 'Relay — Outbound Email Test',
-      text:
-        `Hello,\n\n` +
-        `This is a test email from Relay confirming that your transactional email provider ` +
-        `is working properly.\n\n` +
-        `SMTP Host: ${env.SMTP_HOST}\n` +
-        `Dispatched at: ${new Date().toISOString()}\n\n` +
-        `Best regards,\nThe Relay Team`,
-      html:
-        `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e4e7ec; border-radius: 8px;">` +
-        `<h2 style="color: #3654F4; margin-top: 0;">Relay Outbound Email Test</h2>` +
-        `<p style="color: #161a22; font-size: 15px; line-height: 1.5;">This email confirms that your transactional email provider is properly configured and delivering messages for <strong>Relay</strong>.</p>` +
-        `<div style="background-color: #f4f5f8; border-radius: 6px; padding: 12px 16px; margin: 20px 0; font-family: monospace; font-size: 13px; color: #374151;">` +
-        `Host: ${env.SMTP_HOST}<br>` +
-        `Timestamp: ${new Date().toISOString()}<br>` +
-        `Status: Verified & Delivered` +
-        `</div>` +
-        `<p style="color: #6b7280; font-size: 13px; margin-bottom: 0;">If you received this message, outbound mail delivery is fully operational.</p>` +
-        `</div>`,
+      subject: sampleEmail.subject,
+      text: sampleEmail.text,
+      html: sampleEmail.html,
     });
 
     console.log(`\n🎉 Email sent successfully!`);
