@@ -35,7 +35,8 @@ export class SchedulerService
     if (
       process.env.NODE_ENV === 'test' ||
       process.env.JEST_WORKER_ID !== undefined ||
-      process.env.SCHEDULER_DISABLED === 'true'
+      process.env.SCHEDULER_DISABLED === 'true' ||
+      process.env.VERCEL
     ) {
       return;
     }

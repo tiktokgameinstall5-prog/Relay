@@ -37,12 +37,18 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
       env.DATABASE_URL.includes('supabase.co') ||
       env.DATABASE_URL.includes('pooler.supabase.com') ||
       (env.NODE_ENV === 'production' && !env.DATABASE_URL.includes('localhost'));
-    const cleanUrl = isCloud ? env.DATABASE_URL.replace(/[?&]sslmode=[^&]+/g, '') : env.DATABASE_URL;
+    let cleanUrl = isCloud ? env.DATABASE_URL.replace(/[?&]sslmode=[^&]+/g, '') : env.DATABASE_URL;
+    // Route Supabase pooler to port 6543 (transaction mode pooler) for serverless scalability:
+    // Port 5432 is session-mode (capped at 15 connections, throwing EMAXCONNSESSION on Vercel).
+    // Port 6543 multiplexes thousands of concurrent serverless queries safely.
+    if (cleanUrl.includes('pooler.supabase.com:5432')) {
+      cleanUrl = cleanUrl.replace('pooler.supabase.com:5432', 'pooler.supabase.com:6543');
+    }
     this.pool = new Pool({
       connectionString: cleanUrl,
-      max: process.env.VERCEL ? 3 : 10,
+      max: process.env.VERCEL ? 2 : 10,
       connectionTimeoutMillis: 10000,
-      idleTimeoutMillis: 30000,
+      idleTimeoutMillis: process.env.VERCEL ? 1000 : 30000,
       ...(isCloud ? { ssl: { rejectUnauthorized: false } } : {}),
     });
   }
