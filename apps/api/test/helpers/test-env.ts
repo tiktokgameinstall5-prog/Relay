@@ -22,6 +22,7 @@
  * throttle at its real default of 5 and asserts the 6th attempt is refused.
  */
 process.env.SIGNUP_THROTTLE_LIMIT = '1000000';
+process.env.MAIL_DRIVER = 'console';
 
 // Ensure test runner always targets the dedicated relay_test database
 if (process.env.DATABASE_URL) {

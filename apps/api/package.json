@@ -11,6 +11,7 @@
     "db:superuser": "tsx --env-file-if-exists=.env src/db/scripts/create-superuser.ts",
     "db:seed": "tsx --env-file-if-exists=.env src/db/scripts/seed-dev.ts",
     "db:generate": "drizzle-kit generate",
+    "mail:test": "tsx --env-file-if-exists=.env src/mail/scripts/test-mail.ts",
     "test": "jest",
     "test:e2e": "node --env-file-if-exists=.env ../../node_modules/jest/bin/jest.js --config jest.e2e.config.ts --runInBand",
     "test:isolation": "node --env-file-if-exists=.env ../../node_modules/jest/bin/jest.js --config jest.e2e.config.ts --runInBand --testPathPatterns \"(isolation|rls)\""

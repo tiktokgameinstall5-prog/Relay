@@ -2,16 +2,9 @@
  * Outbound email.
  *
  * One method, one message shape. Callers do not know or care which driver is
- * configured, so adding SMTP later (task #8) changes this file and nothing else.
- *
- * WHY ONLY A CONSOLE DRIVER TODAY
- *
- * nodemailer is already a dependency and .env.example already advertises
- * MAIL_DRIVER=smtp, but SMTP cannot be exercised here: .claude/settings.json
- * denies outbound network calls, so an SMTP transport would ship as untested,
- * unexercised code on the invite path. env.validation.ts refuses to boot with
- * MAIL_DRIVER=smtp for exactly that reason — an explicit "not implemented yet"
- * rather than a silent no-op the first time an Owner invites a Manager.
+ * configured. Supports:
+ *   - 'console': renders the message to logger (development and automated testing)
+ *   - 'smtp': dispatches real email via nodemailer (production transactional email)
  *
  * WHY MAIL FAILURE MUST NOT BE FATAL TO ITS CALLER
  *
@@ -23,14 +16,17 @@
  */
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import nodemailer, { type Transporter } from 'nodemailer';
 import { appEnv } from '../config/configuration';
 import type { MailDriver } from '../config/env.validation';
 
 export interface MailMessage {
   to: string;
   subject: string;
-  /** Plain text. No HTML driver yet — invite mail has no need for one. */
+  /** Plain text content. */
   text: string;
+  /** Optional HTML content for rich email clients. */
+  html?: string;
 }
 
 @Injectable()
@@ -38,11 +34,33 @@ export class MailerService {
   private readonly logger = new Logger(MailerService.name);
   private readonly driver: MailDriver;
   private readonly from: string;
+  private readonly transporter?: Transporter;
 
   constructor(@Inject(ConfigService) config: ConfigService) {
     const env = appEnv(config);
     this.driver = env.MAIL_DRIVER;
     this.from = env.MAIL_FROM;
+
+    if (this.driver === 'smtp') {
+      const port = env.SMTP_PORT ?? 587;
+      const secure = env.SMTP_SECURE ?? (port === 465);
+      this.transporter = nodemailer.createTransport({
+        host: env.SMTP_HOST,
+        port,
+        secure,
+        auth: {
+          user: env.SMTP_USER,
+          pass: env.SMTP_PASS,
+        },
+      });
+      this.logger.log(
+        `SMTP driver initialized for ${env.SMTP_HOST}:${port} (secure: ${secure}) with from "${this.from}"`,
+      );
+    }
+  }
+
+  getDriver(): MailDriver {
+    return this.driver;
   }
 
   async send(msg: MailMessage): Promise<void> {
@@ -51,16 +69,59 @@ export class MailerService {
         this.sendToConsole(msg);
         return;
       case 'smtp':
-        // Unreachable: env.validation.ts refuses to boot with this driver.
-        // Kept so the switch is exhaustive and the gap is visible here too.
-        throw new Error('MAIL_DRIVER=smtp is not implemented yet.');
+        await this.sendSmtp(msg);
+        return;
+    }
+  }
+
+  /**
+   * Verify SMTP connection and credentials with the upstream mail server.
+   */
+  async verifyConnection(): Promise<boolean> {
+    if (this.driver !== 'smtp' || !this.transporter) {
+      return false;
+    }
+    try {
+      await this.transporter.verify();
+      this.logger.log('SMTP connection verified successfully.');
+      return true;
+    } catch (err) {
+      this.logger.error(`SMTP verification failed: ${(err as Error).message}`);
+      throw err;
+    }
+  }
+
+  /**
+   * Dispatches email via the configured SMTP transporter.
+   */
+  private async sendSmtp(msg: MailMessage): Promise<void> {
+    if (!this.transporter) {
+      throw new Error('SMTP transporter is not initialized.');
+    }
+
+    try {
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to: msg.to,
+        subject: msg.subject,
+        text: msg.text,
+        ...(msg.html ? { html: msg.html } : {}),
+      });
+      this.logger.log(
+        `Email dispatched via SMTP to "${msg.to}" (messageId: ${info.messageId})`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `SMTP send failure to "${msg.to}": ${(err as Error).message}`,
+      );
+      throw err;
     }
   }
 
   /**
    * Renders the whole message to the log, passcode included. That is the point
    * in development — there is no inbox to check — and the reason production
-   * cannot boot with this driver.
+   * should use the SMTP driver.
    */
   private sendToConsole(msg: MailMessage): void {
     this.logger.log(

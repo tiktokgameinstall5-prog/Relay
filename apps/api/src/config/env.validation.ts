@@ -11,7 +11,28 @@
  */
 
 /** Placeholder values shipped in .env.example. Booting with one is a bug. */
-const PLACEHOLDER_MARKERS = ['replace-me', 'changeme', 'change-me', 'your-secret-here'];
+const PLACEHOLDER_MARKERS = [
+  'replace-me',
+  'replace_me',
+  'changeme',
+  'change-me',
+  'change_me',
+  'your-secret-here',
+  'placeholder',
+  'example',
+  'sample',
+  'dummy',
+  'todo',
+];
+
+/** Matches documentation template tokens like your_key_here, <token>, ... */
+const DOC_PLACEHOLDER_REGEX = /^(your[-_]|.*[-_]here$|<.*>|\.\.\.)/i;
+
+function isPlaceholder(value: string): boolean {
+  const lower = value.toLowerCase().trim();
+  if (DOC_PLACEHOLDER_REGEX.test(lower)) return true;
+  return PLACEHOLDER_MARKERS.some((m) => lower.includes(m));
+}
 
 /** A 256-bit secret in base64 is ~43 chars; require enough to not be guessable. */
 const MIN_SECRET_LENGTH = 32;
@@ -93,6 +114,16 @@ export interface AppEnv {
   MAIL_FROM: string;
   /** Absolute base URL used to build the invite link. */
   APP_BASE_URL: string;
+  /** SMTP host for outbound mail when MAIL_DRIVER=smtp. */
+  SMTP_HOST?: string;
+  /** SMTP port (typically 587 for TLS, 465 for SSL). Defaults to 587. */
+  SMTP_PORT?: number;
+  /** Whether to use TLS/SSL directly (true for 465, false for 587/STARTTLS). */
+  SMTP_SECURE?: boolean;
+  /** SMTP username or API key name (e.g. "resend" or "apikey"). */
+  SMTP_USER?: string;
+  /** SMTP password or API token. */
+  SMTP_PASS?: string;
 }
 
 export type MailDriver = 'console' | 'smtp';
@@ -211,18 +242,107 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     problems.push(`MAIL_DRIVER must be "console" or "smtp", got "${source.MAIL_DRIVER}".`);
   }
 
-  // Console driver prints passcodes to stdout — acceptable for dev/preview staging
-  // Note: when SMTP is implemented in Phase 4, production should switch to smtp.
-  if (mailDriver === 'smtp') {
-    problems.push(
-      'MAIL_DRIVER=smtp is not implemented yet. Use console for development/preview.',
-    );
-  }
-
   const mailFrom = source.MAIL_FROM ?? '';
-  // Console driver ignores MAIL_FROM, so don't require it there.
-  if (mailDriver !== 'console' && mailFrom.trim() === '') {
-    problems.push('MAIL_FROM is required when MAIL_DRIVER is not console.');
+  let smtpHost: string | undefined;
+  let smtpPort: number | undefined;
+  let smtpSecure: boolean | undefined;
+  let smtpUser: string | undefined;
+  let smtpPass: string | undefined;
+
+  if (mailDriver === 'smtp') {
+    if (!mailFrom.trim()) {
+      problems.push('MAIL_FROM is required when MAIL_DRIVER=smtp.');
+    } else {
+      const emailPattern = /^([^<]+<)?\s*[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\s*>?$/;
+      if (!emailPattern.test(mailFrom.trim())) {
+        problems.push(`MAIL_FROM is not a valid email address format: "${mailFrom}".`);
+      }
+      if (isPlaceholder(mailFrom)) {
+        problems.push(`MAIL_FROM contains a documentation placeholder: "${mailFrom}".`);
+      }
+    }
+
+    const rawHost = source.SMTP_HOST?.trim();
+    if (!rawHost) {
+      problems.push('SMTP_HOST is required when MAIL_DRIVER=smtp.');
+    } else if (
+      isPlaceholder(rawHost) ||
+      rawHost.includes('example.com') ||
+      rawHost.includes('your-smtp-host')
+    ) {
+      problems.push(`SMTP_HOST contains a documentation placeholder: "${rawHost}".`);
+    } else {
+      smtpHost = rawHost;
+    }
+
+    smtpPort = intInRange('SMTP_PORT', source.SMTP_PORT, 587, 1, 65535, problems);
+    smtpSecure = boolOrDefault('SMTP_SECURE', source.SMTP_SECURE, smtpPort === 465, problems);
+
+    const rawUser = source.SMTP_USER?.trim();
+    if (!rawUser) {
+      problems.push('SMTP_USER is required when MAIL_DRIVER=smtp.');
+    } else if (isPlaceholder(rawUser)) {
+      problems.push(`SMTP_USER contains a documentation placeholder: "${rawUser}".`);
+    } else {
+      smtpUser = rawUser;
+    }
+
+    const rawPass = source.SMTP_PASS?.trim();
+    if (!rawPass) {
+      problems.push('SMTP_PASS is required when MAIL_DRIVER=smtp.');
+    } else if (isPlaceholder(rawPass)) {
+      problems.push(`SMTP_PASS contains a documentation placeholder.`);
+    } else {
+      smtpPass = rawPass;
+    }
+
+    // Provider-specific vs Generic SMTP validation
+    if (smtpHost && smtpUser && smtpPass) {
+      const lowerHost = smtpHost.toLowerCase();
+      const isResend = lowerHost.includes('resend.com');
+      const isSendGrid = lowerHost.includes('sendgrid.net');
+      const isPostmark = lowerHost.includes('postmarkapp.com');
+
+      if (isResend) {
+        if (smtpUser !== 'resend') {
+          problems.push(
+            `For Resend SMTP (host: ${smtpHost}), SMTP_USER must be "resend", got "${smtpUser}".`,
+          );
+        }
+        if (!smtpPass.startsWith('re_') || smtpPass.length < 24) {
+          problems.push(
+            `For Resend SMTP (host: ${smtpHost}), SMTP_PASS must start with "re_" and be at least 24 characters.`,
+          );
+        }
+      } else if (isSendGrid) {
+        if (smtpUser !== 'apikey') {
+          problems.push(
+            `For SendGrid SMTP (host: ${smtpHost}), SMTP_USER must be "apikey", got "${smtpUser}".`,
+          );
+        }
+        if (!smtpPass.startsWith('SG.') || smtpPass.length < 60) {
+          problems.push(
+            `For SendGrid SMTP (host: ${smtpHost}), SMTP_PASS must start with "SG." and be a valid SendGrid API key.`,
+          );
+        }
+      } else if (isPostmark) {
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (!uuidPattern.test(smtpPass)) {
+          problems.push(
+            `For Postmark SMTP (host: ${smtpHost}), SMTP_PASS must be a valid Postmark Server API Token (UUID).`,
+          );
+        }
+      } else {
+        // Generic / Custom SMTP branch ONLY (e.g. self-hosted, AWS SES, Gmail, Mailgun)
+        if (smtpPass.length < 8) {
+          problems.push(`SMTP_PASS must be at least 8 characters.`);
+        }
+        const weakPasswords = ['password', '12345678', 'admin', 'secret', 'relay'];
+        if (weakPasswords.includes(smtpPass.toLowerCase())) {
+          problems.push(`SMTP_PASS cannot be a trivial password like "${smtpPass}".`);
+        }
+      }
+    }
   }
 
   // --- APP_BASE_URL validation ---------------------------------------------
@@ -316,6 +436,11 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     MAIL_DRIVER: mailDriver as MailDriver,
     MAIL_FROM: mailFrom.trim(),
     APP_BASE_URL: appBaseUrl ?? '',
+    SMTP_HOST: smtpHost,
+    SMTP_PORT: smtpPort,
+    SMTP_SECURE: smtpSecure,
+    SMTP_USER: smtpUser,
+    SMTP_PASS: smtpPass,
   };
 
   if (problems.length > 0) fail(problems);

@@ -17,6 +17,7 @@
     "db:check": "npm --workspace apps/api run db:check",
     "db:migrate": "npm --workspace apps/api run db:migrate",
     "db:superuser": "npm --workspace apps/api run db:superuser",
+    "mail:test": "npm --workspace apps/api run mail:test",
     "test": "npm --workspace apps/api run test",
     "test:e2e": "npm --workspace apps/api run test:e2e",
     "test:isolation": "npm --workspace apps/api run test:isolation",
