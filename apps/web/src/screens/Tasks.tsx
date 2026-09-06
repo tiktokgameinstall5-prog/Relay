@@ -8,7 +8,7 @@
  *
  * Implements 5-second short polling so step completions and hand-offs by teammates reflect live.
  */
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   ArrowRightLeft,
   CheckCircle2,
@@ -35,6 +35,7 @@ import { useAuth } from '../auth/AuthContext';
 import {
   createTask,
   deleteAttachment,
+  downloadAttachmentFile,
   forwardStep,
   getAttachmentDownloadUrl,
   listAttachments,
@@ -82,22 +83,41 @@ export function Tasks() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const { state, reload } = useAsync(async () => {
-    return await listTasks();
-  });
+  const [tasks, setTasks] = useState<TaskResponse[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
 
-  // Short-polling effect: refresh every 5s while mounted
+  const fetchTasks = useCallback(async (isBackground = false) => {
+    try {
+      const data = await listTasks();
+      setTasks(data);
+      setError(null);
+    } catch (err: unknown) {
+      if (!isBackground) {
+        setError(err instanceof Error ? err : new Error('Failed to load tasks'));
+      }
+    } finally {
+      if (!isBackground) {
+        setLoading(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
+    fetchTasks(false);
+  }, [fetchTasks]);
+
+  // Smooth short-polling: refreshes tasks in background without any UI flicker or unmounting
+  useEffect(() => {
+    // Pause background polling while creating a task so modal and inputs are never disturbed
+    if (showCreateModal) return;
+
     const timer = setInterval(() => {
-      // Background poll: refetch listTasks without unmounting view
-      listTasks().catch(() => {
-        // Silent failure on transient poll error
-      });
-      reload();
+      fetchTasks(true);
     }, POLL_INTERVAL_MS);
 
     return () => clearInterval(timer);
-  }, [reload]);
+  }, [showCreateModal, fetchTasks]);
 
   const canAssign = user?.role === 'manager' || user?.role === 'owner';
 
@@ -131,29 +151,31 @@ export function Tasks() {
       )}
 
       <div className="mt-6">
-        <AsyncView state={state}>
-          {(tasks) =>
-            tasks.length === 0 ? (
-              <EmptyTasksState canAssign={canAssign} onAssign={() => setShowCreateModal(true)} />
-            ) : (
-              <div className="space-y-4">
-                {tasks.map((task) => (
-                  <TaskCard
-                    key={task.id}
-                    task={task}
-                    currentUserId={user?.id ?? ''}
-                    userRole={user?.role ?? 'member'}
-                    onForwardSuccess={() => {
-                      setActionError(null);
-                      reload();
-                    }}
-                    onForwardError={(msg) => setActionError(msg)}
-                  />
-                ))}
-              </div>
-            )
-          }
-        </AsyncView>
+        {loading && tasks === null ? (
+          <div className="text-muted py-16 text-center text-sm">Loading…</div>
+        ) : error && tasks === null ? (
+          <Panel title="Couldn’t load tasks">
+            <p className="text-sm text-red-600">{error.message}</p>
+          </Panel>
+        ) : tasks && tasks.length === 0 ? (
+          <EmptyTasksState canAssign={canAssign} onAssign={() => setShowCreateModal(true)} />
+        ) : tasks ? (
+          <div className="space-y-4">
+            {tasks.map((task) => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                currentUserId={user?.id ?? ''}
+                userRole={user?.role ?? 'member'}
+                onForwardSuccess={() => {
+                  setActionError(null);
+                  fetchTasks(true);
+                }}
+                onForwardError={(msg) => setActionError(msg)}
+              />
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {showCreateModal && (
@@ -162,7 +184,7 @@ export function Tasks() {
           onClose={() => setShowCreateModal(false)}
           onCreated={() => {
             setShowCreateModal(false);
-            reload();
+            fetchTasks(true);
           }}
         />
       )}
@@ -407,7 +429,12 @@ function TaskCard({
         )}
 
         {/* Content & Attachments Section */}
-        <TaskAttachmentsSection taskId={task.id} currentUserId={currentUserId} userRole={userRole} />
+        <TaskAttachmentsSection
+          taskId={task.id}
+          taskType={task.type}
+          currentUserId={currentUserId}
+          userRole={userRole}
+        />
       </div>
     </Panel>
   );
@@ -421,16 +448,19 @@ function fmtFileSize(bytes: number): string {
 
 function TaskAttachmentsSection({
   taskId,
+  taskType,
   currentUserId,
   userRole,
 }: {
   taskId: string;
+  taskType?: TaskType;
   currentUserId: string;
   userRole: string;
 }) {
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -457,6 +487,17 @@ function TaskAttachmentsSection({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 30 * 1024 * 1024) {
+      setError(`Attachment cannot exceed 30MB (selected: ${fmtFileSize(file.size)})`);
+      e.target.value = '';
+      return;
+    }
+    if (taskType === 'file' && file.size > 2 * 1024 * 1024) {
+      setError(`File attachment cannot exceed 2MB (selected: ${fmtFileSize(file.size)})`);
+      e.target.value = '';
+      return;
+    }
+
     setUploading(true);
     setError(null);
     try {
@@ -466,7 +507,7 @@ function TaskAttachmentsSection({
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to upload file.');
+        setError(err instanceof Error ? err.message : 'Failed to upload file.');
       }
     } finally {
       setUploading(false);
@@ -521,7 +562,14 @@ function TaskAttachmentsSection({
           {loading ? (
             <p className="text-xs text-faint">Loading attachments...</p>
           ) : attachments.length === 0 ? (
-            <p className="text-xs text-faint">No attachments uploaded yet.</p>
+            <p className="text-xs text-faint">
+              No attachments uploaded yet.{' '}
+              {taskType === 'video'
+                ? '(Max 30MB)'
+                : taskType === 'file'
+                  ? '(Max 2MB)'
+                  : '(Max 5MB)'}
+            </p>
           ) : (
             attachments.map((att) => {
               const isVideo = att.mimeType.startsWith('video/');
@@ -613,6 +661,35 @@ function CreateTaskModal({
   const [name, setName] = useState('');
   const [type, setType] = useState<TaskType>('text');
   const [description, setDescription] = useState('');
+
+  // Attachment state for task creation
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setAttachmentError(null);
+
+    if (type === 'video' && f.size > 30 * 1024 * 1024) {
+      setAttachmentError(`Video cannot exceed 30MB (selected: ${fmtFileSize(f.size)})`);
+      e.target.value = '';
+      return;
+    }
+    if (type === 'file' && f.size > 2 * 1024 * 1024) {
+      setAttachmentError(`File cannot exceed 2MB (selected: ${fmtFileSize(f.size)})`);
+      e.target.value = '';
+      return;
+    }
+    if (type === 'text' && f.size > 5 * 1024 * 1024) {
+      setAttachmentError(`Document cannot exceed 5MB (selected: ${fmtFileSize(f.size)})`);
+      e.target.value = '';
+      return;
+    }
+
+    setAttachedFile(f);
+  }
 
   // Scheduling state
   const [isScheduled, setIsScheduled] = useState(false);
@@ -709,6 +786,7 @@ function CreateTaskModal({
 
     setSubmitting(true);
     try {
+      let createdTask: TaskResponse;
       if (isOwner) {
         if (targetMode === 'team') {
           if (!selectedTeamId) {
@@ -716,7 +794,7 @@ function CreateTaskModal({
             setSubmitting(false);
             return;
           }
-          await createTask({
+          createdTask = await createTask({
             name: name.trim(),
             type,
             description: description.trim() ? description.trim() : undefined,
@@ -730,20 +808,20 @@ function CreateTaskModal({
             setSubmitting(false);
             return;
           }
-          await createTask({
+          createdTask = await createTask({
             name: name.trim(),
             type,
             description: description.trim() ? description.trim() : undefined,
             scheduledFor: scheduledIso,
             targetManagerId: selectedManagerId,
           });
-        } else if (targetMode === 'member') {
+        } else {
           if (!selectedMemberId) {
             setError('Please select a target member.');
             setSubmitting(false);
             return;
           }
-          await createTask({
+          createdTask = await createTask({
             name: name.trim(),
             type,
             description: description.trim() ? description.trim() : undefined,
@@ -758,7 +836,7 @@ function CreateTaskModal({
           setSubmitting(false);
           return;
         }
-        await createTask({
+        createdTask = await createTask({
           name: name.trim(),
           type,
           description: description.trim() ? description.trim() : undefined,
@@ -766,15 +844,25 @@ function CreateTaskModal({
           memberIds: selectedMemberIds,
         });
       }
+
+      // If an attachment was selected, upload it immediately
+      if (attachedFile && createdTask?.id) {
+        setUploadProgress(0);
+        await uploadAttachment(createdTask.id, attachedFile, (pct) => {
+          setUploadProgress(pct);
+        });
+      }
+
       onCreated();
     } catch (err: unknown) {
       if (err instanceof ApiError) {
         setError(err.message);
       } else {
-        setError('Failed to create task relay.');
+        setError(err instanceof Error ? err.message : 'Failed to create task relay.');
       }
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   }
 
@@ -962,6 +1050,86 @@ function CreateTaskModal({
           />
         </div>
 
+        {/* Attachment Upload Section */}
+        <div className="rounded-lg border border-hairline bg-slate-50/70 p-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Paperclip size={16} className={attachedFile ? 'text-active' : 'text-muted'} />
+              <div>
+                <div className="text-xs font-semibold text-ink">
+                  {type === 'video'
+                    ? 'Attach master video (Optional)'
+                    : type === 'file'
+                      ? 'Attach file (Optional)'
+                      : 'Attach reference document (Optional)'}
+                </div>
+                <div className="text-[11px] text-muted">
+                  {type === 'video'
+                    ? 'Lossless original video (MP4, WebM, MOV) — Max 30MB'
+                    : type === 'file'
+                      ? 'Documents, archives, sheets, etc. — Max 2MB'
+                      : 'Text or document file (TXT, PDF, DOCX, JSON) — Max 5MB'}
+                </div>
+              </div>
+            </div>
+
+            {!attachedFile && (
+              <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-hairline bg-white px-2.5 py-1.5 text-xs font-medium text-ink shadow-2xs hover:border-active hover:bg-blue-50 transition-colors">
+                <UploadCloud size={14} className="text-active" />
+                <span>Choose file</span>
+                <input
+                  type="file"
+                  onChange={handleFileChange}
+                  accept={
+                    type === 'video'
+                      ? 'video/*,.mp4,.mov,.webm,.mkv'
+                      : type === 'text'
+                        ? '.txt,.pdf,.doc,.docx,.json,.rtf,text/*'
+                        : undefined
+                  }
+                  className="hidden"
+                />
+              </label>
+            )}
+          </div>
+
+          {attachmentError && (
+            <p className="mt-2 text-xs font-medium text-red-600">{attachmentError}</p>
+          )}
+
+          {attachedFile && (
+            <div className="mt-2.5 flex items-center justify-between rounded-md border border-hairline bg-white px-3 py-2 text-xs shadow-2xs">
+              <div className="flex items-center gap-2 truncate">
+                {type === 'video' ? (
+                  <Film size={15} className="text-active shrink-0" />
+                ) : type === 'file' ? (
+                  <Paperclip size={15} className="text-amber shrink-0" />
+                ) : (
+                  <FileText size={15} className="text-muted shrink-0" />
+                )}
+                <span className="font-medium text-ink truncate" title={attachedFile.name}>
+                  {attachedFile.name}
+                </span>
+                <span className="text-faint shrink-0 font-mono">
+                  ({fmtFileSize(attachedFile.size)})
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAttachedFile(null);
+                  setAttachmentError(null);
+                }}
+                disabled={submitting}
+                className="text-faint hover:text-red-600 shrink-0 ml-2"
+                title="Remove attachment"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Scheduling Toggle & Picker */}
         <div className="rounded-lg border border-hairline bg-slate-50/70 p-3">
           <div className="flex items-center justify-between">
@@ -1138,7 +1306,13 @@ function CreateTaskModal({
             Cancel
           </Button>
           <Button variant="primary" type="submit" disabled={submitting}>
-            {submitting ? 'Assigning...' : isOwner ? 'Confirm assignment' : 'Create relay task'}
+            {submitting
+              ? uploadProgress !== null
+                ? `Uploading (${uploadProgress}%)...`
+                : 'Assigning...'
+              : isOwner
+                ? 'Confirm assignment'
+                : 'Create relay task'}
           </Button>
         </div>
       </form>

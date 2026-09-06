@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -66,6 +67,73 @@ export class AttachmentController {
     @UploadedFile() file?: { originalname: string; mimetype: string; size: number; buffer: Buffer },
   ): Promise<TaskAttachmentDto> {
     return this.attachmentService.uploadAttachment(req.user, taskId, file);
+  }
+
+  @ApiOperation({
+    summary: 'Initialize chunked attachment upload',
+    description: 'Initializes a session for chunked upload of large attachments (e.g. video files up to 30MB).',
+  })
+  @ApiBearerAuth()
+  @OwnedResource({ table: 'task', param: 'taskId' })
+  @Post(':taskId/attachments/chunk-init')
+  async initChunk(
+    @Req() req: RequestWithUser,
+    @Param('taskId') taskId: string,
+  ): Promise<{ uploadId: string }> {
+    return this.attachmentService.initChunkUpload(req.user, taskId);
+  }
+
+  @ApiOperation({
+    summary: 'Upload a single chunk of an attachment',
+    description: 'Uploads a single chunk part up to 10MB as part of a chunked upload session.',
+  })
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @OwnedResource({ table: 'task', param: 'taskId' })
+  @Post(':taskId/attachments/chunk-part')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
+    }),
+  )
+  async uploadChunk(
+    @Req() req: RequestWithUser,
+    @Param('taskId') taskId: string,
+    @Body('uploadId') uploadId: string,
+    @Body('chunkIndex') chunkIndex: string | number,
+    @UploadedFile() file?: { buffer: Buffer },
+  ): Promise<{ success: boolean; chunkIndex: number }> {
+    return this.attachmentService.uploadChunkPart(
+      req.user,
+      taskId,
+      uploadId,
+      Number(chunkIndex),
+      file?.buffer,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Complete chunked attachment upload',
+    description: 'Assembles uploaded chunks into a single attachment, verifies integrity, and saves the file.',
+  })
+  @ApiBearerAuth()
+  @OwnedResource({ table: 'task', param: 'taskId' })
+  @Post(':taskId/attachments/chunk-complete')
+  async completeChunk(
+    @Req() req: RequestWithUser,
+    @Param('taskId') taskId: string,
+    @Body() body: { uploadId: string; fileName: string; mimeType: string; fileSize?: number },
+  ): Promise<TaskAttachmentDto> {
+    return this.attachmentService.completeChunkUpload(
+      req.user,
+      taskId,
+      body.uploadId,
+      body.fileName,
+      body.mimeType,
+      body.fileSize,
+    );
   }
 
   @ApiOperation({

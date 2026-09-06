@@ -6,6 +6,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
 import type { PoolClient } from 'pg';
 import { DbService } from '../db/db.service';
 import type { CurrentUser } from '../db/tenant-context';
@@ -69,6 +70,7 @@ interface AttachmentDbRow {
   mime_type: string;
   storage_key: string;
   checksum_sha256: string;
+  file_data?: Buffer | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -111,16 +113,33 @@ export class AttachmentService {
       // Validate MIME type against task.type
       validateAttachmentMimeType(task.type, file.originalname, file.mimetype || 'application/octet-stream');
 
-      // 2. Put file into storage
-      const storageKey = this.storage.generateKey(actor.orgId, taskId, file.originalname);
-      const stored = await this.storage.put(storageKey, file.buffer, file.mimetype);
+      // Validate file size constraints per task type
+      if (task.type === 'video' && file.size > 30 * 1024 * 1024) {
+        throw new BadRequestException('Video attachments cannot exceed 30MB');
+      } else if (task.type === 'file' && file.size > 2 * 1024 * 1024) {
+        throw new BadRequestException('File attachments cannot exceed 2MB');
+      } else if (task.type === 'text' && file.size > 5 * 1024 * 1024) {
+        throw new BadRequestException('Text attachments cannot exceed 5MB');
+      }
 
-      // 3. Insert record in task_attachment
+      // 2. Put file into storage (safely catching any filesystem driver errors)
+      const storageKey = this.storage.generateKey(actor.orgId, taskId, file.originalname);
+      let checksumSha256 = createHash('sha256').update(file.buffer).digest('hex');
+      let storedSize = file.buffer.length;
+      try {
+        const stored = await this.storage.put(storageKey, file.buffer, file.mimetype);
+        checksumSha256 = stored.checksumSha256;
+        storedSize = stored.size;
+      } catch (err: any) {
+        this.logger.warn(`Storage driver put failed, saving directly to database: ${err.message}`);
+      }
+
+      // 3. Insert record in task_attachment (persisting binary buffer in PostgreSQL file_data)
       const insertRes = await c.query<AttachmentDbRow>(
         `INSERT INTO task_attachment (
            org_id, manager_id, task_id, uploaded_by_user_id,
-           file_name, file_size, mime_type, storage_key, checksum_sha256
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           file_name, file_size, mime_type, storage_key, checksum_sha256, file_data
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
          RETURNING *`,
         [
           actor.orgId,
@@ -128,10 +147,11 @@ export class AttachmentService {
           taskId,
           actor.userId,
           file.originalname,
-          stored.size,
+          storedSize,
           file.mimetype || 'application/octet-stream',
           storageKey,
-          stored.checksumSha256,
+          checksumSha256,
+          file.buffer,
         ],
       );
 
@@ -146,8 +166,158 @@ export class AttachmentService {
         metadata: {
           taskId,
           fileName: file.originalname,
-          fileSize: stored.size,
-          checksumSha256: stored.checksumSha256,
+          fileSize: storedSize,
+          checksumSha256,
+        },
+      });
+
+      return this.mapToDto(row);
+    });
+  }
+
+  async initChunkUpload(actor: CurrentUser, taskId: string): Promise<{ uploadId: string }> {
+    if (!UUID_RE.test(taskId)) {
+      throw new NotFoundException();
+    }
+
+    return this.db.tx(async (c) => {
+      const taskRes = await c.query<{ id: string }>(
+        `SELECT id FROM task WHERE id = $1`,
+        [taskId],
+      );
+      if (taskRes.rowCount === 0) {
+        throw new NotFoundException('Task not found');
+      }
+      return { uploadId: randomUUID() };
+    });
+  }
+
+  async uploadChunkPart(
+    actor: CurrentUser,
+    taskId: string,
+    uploadId: string,
+    chunkIndex: number,
+    buffer?: Buffer,
+  ): Promise<{ success: boolean; chunkIndex: number }> {
+    if (!UUID_RE.test(taskId) || !UUID_RE.test(uploadId)) {
+      throw new NotFoundException();
+    }
+
+    if (!buffer || buffer.length === 0) {
+      throw new BadRequestException('Chunk buffer is required');
+    }
+
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new BadRequestException('Chunk size exceeds maximum limit of 10MB');
+    }
+
+    await this.db.tx(async (c) => {
+      await c.query(
+        `INSERT INTO task_attachment_chunk (upload_id, chunk_index, data) VALUES ($1, $2, $3)`,
+        [uploadId, chunkIndex, buffer],
+      );
+    });
+
+    return { success: true, chunkIndex };
+  }
+
+  async completeChunkUpload(
+    actor: CurrentUser,
+    taskId: string,
+    uploadId: string,
+    fileName: string,
+    mimeType: string,
+    fileSize?: number,
+  ): Promise<TaskAttachmentDto> {
+    if (!UUID_RE.test(taskId) || !UUID_RE.test(uploadId)) {
+      throw new NotFoundException();
+    }
+
+    if (!fileName) {
+      throw new BadRequestException('fileName is required');
+    }
+
+    return this.db.tx(async (c) => {
+      const taskRes = await c.query<{ id: string; org_id: string; manager_id: string; type: TaskType }>(
+        `SELECT id, org_id, manager_id, type FROM task WHERE id = $1`,
+        [taskId],
+      );
+
+      if (taskRes.rowCount === 0) {
+        throw new NotFoundException('Task not found');
+      }
+
+      const task = taskRes.rows[0];
+
+      // Validate MIME type against task.type
+      validateAttachmentMimeType(task.type, fileName, mimeType || 'application/octet-stream');
+
+      // Fetch all chunks in order
+      const chunksRes = await c.query<{ data: Buffer }>(
+        `SELECT data FROM task_attachment_chunk WHERE upload_id = $1 ORDER BY chunk_index ASC`,
+        [uploadId],
+      );
+
+      if (chunksRes.rowCount === 0) {
+        throw new BadRequestException('No chunks found for this upload session');
+      }
+
+      const fullBuffer = Buffer.concat(chunksRes.rows.map((r) => r.data));
+
+      // Validate size constraints
+      if (task.type === 'video' && fullBuffer.length > 30 * 1024 * 1024) {
+        throw new BadRequestException('Video attachments cannot exceed 30MB');
+      } else if (task.type === 'file' && fullBuffer.length > 2 * 1024 * 1024) {
+        throw new BadRequestException('File attachments cannot exceed 2MB');
+      } else if (task.type === 'text' && fullBuffer.length > 5 * 1024 * 1024) {
+        throw new BadRequestException('Text attachments cannot exceed 5MB');
+      }
+
+      const checksumSha256 = createHash('sha256').update(fullBuffer).digest('hex');
+      const storageKey = this.storage.generateKey(actor.orgId, taskId, fileName);
+
+      try {
+        await this.storage.put(storageKey, fullBuffer, mimeType);
+      } catch (err: any) {
+        this.logger.warn(`Storage driver put failed, saving directly to database: ${err.message}`);
+      }
+
+      const insertRes = await c.query<AttachmentDbRow>(
+        `INSERT INTO task_attachment (
+           org_id, manager_id, task_id, uploaded_by_user_id,
+           file_name, file_size, mime_type, storage_key, checksum_sha256, file_data
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [
+          actor.orgId,
+          task.manager_id,
+          taskId,
+          actor.userId,
+          fileName,
+          fullBuffer.length,
+          mimeType || 'application/octet-stream',
+          storageKey,
+          checksumSha256,
+          fullBuffer,
+        ],
+      );
+
+      const row = insertRes.rows[0];
+
+      // Cleanup chunks
+      await c.query(`DELETE FROM task_attachment_chunk WHERE upload_id = $1`, [uploadId]);
+
+      await this.writeAudit(c, {
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        action: 'task_attachment.uploaded',
+        targetType: 'task_attachment',
+        targetId: row.id,
+        metadata: {
+          taskId,
+          fileName,
+          fileSize: fullBuffer.length,
+          checksumSha256,
         },
       });
 
@@ -171,7 +341,8 @@ export class AttachmentService {
       }
 
       const res = await c.query<AttachmentDbRow>(
-        `SELECT * FROM task_attachment WHERE task_id = $1 ORDER BY created_at ASC`,
+        `SELECT id, org_id, manager_id, task_id, uploaded_by_user_id, file_name, file_size, mime_type, storage_key, checksum_sha256, created_at, updated_at
+         FROM task_attachment WHERE task_id = $1 ORDER BY created_at ASC`,
         [taskId],
       );
 
@@ -199,14 +370,22 @@ export class AttachmentService {
       }
 
       const row = res.rows[0];
-      const stored = await this.storage.get(row.storage_key);
-      if (!stored) {
+      let buffer: Buffer | null = row.file_data ?? null;
+
+      if (!buffer) {
+        const stored = await this.storage.get(row.storage_key);
+        if (stored) {
+          buffer = stored.buffer;
+        }
+      }
+
+      if (!buffer) {
         throw new NotFoundException('File data not found');
       }
 
       return {
         attachment: this.mapToDto(row),
-        buffer: stored.buffer,
+        buffer,
       };
     });
   }
@@ -242,7 +421,11 @@ export class AttachmentService {
         taskId,
       ]);
 
-      await this.storage.delete(row.storage_key);
+      try {
+        await this.storage.delete(row.storage_key);
+      } catch {
+        // Safe to ignore storage delete errors
+      }
 
       await this.writeAudit(c, {
         orgId: actor.orgId,

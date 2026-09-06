@@ -37,6 +37,10 @@ export function hasToken(): boolean {
   return accessToken !== null;
 }
 
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
 /**
  * A non-2xx response, normalised into one shape.
  *

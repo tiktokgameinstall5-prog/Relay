@@ -28,7 +28,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     @Inject(AuthService) private readonly auth: AuthService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+        ExtractJwt.fromUrlQueryParameter('token'),
+      ]),
       // Never true. An expired token must stop working; letting the app decide
       // would mean re-implementing expiry checking by hand.
       ignoreExpiration: false,

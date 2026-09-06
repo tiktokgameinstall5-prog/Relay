@@ -1,7 +1,7 @@
 /**
  * Workflow API functions for tasks and relay step forwarding (CLAUDE.md §2).
  */
-import { request } from './client';
+import { getAccessToken, request } from './client';
 import type { CreateTaskInput, ForwardStepInput, TaskResponse } from './types';
 
 /** GET /api/tasks — list tasks visible in the caller's tenant slice */
@@ -29,13 +29,64 @@ export function listAttachments(taskId: string): Promise<import('./types').TaskA
   return request<import('./types').TaskAttachment[]>(`/tasks/${taskId}/attachments`);
 }
 
-/** POST /api/tasks/:id/attachments — upload a file or master video to a task */
-export function uploadAttachment(taskId: string, file: File): Promise<import('./types').TaskAttachment> {
-  const formData = new FormData();
-  formData.append('file', file);
-  return request<import('./types').TaskAttachment>(`/tasks/${taskId}/attachments`, {
+const CHUNK_THRESHOLD = 3.5 * 1024 * 1024; // 3.5MB (Vercel payload limit is 4.5MB)
+const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
+
+/** POST /api/tasks/:id/attachments — upload a file or master video to a task (supports chunked upload for >3.5MB) */
+export async function uploadAttachment(
+  taskId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<import('./types').TaskAttachment> {
+  // If file is smaller than threshold, do direct single-request upload
+  if (file.size <= CHUNK_THRESHOLD) {
+    const formData = new FormData();
+    formData.append('file', file);
+    const result = await request<import('./types').TaskAttachment>(`/tasks/${taskId}/attachments`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (onProgress) onProgress(100);
+    return result;
+  }
+
+  // Large file (> 3.5MB, e.g. video up to 30MB): use chunked upload to bypass serverless payload limits
+  const { uploadId } = await request<{ uploadId: string }>(`/tasks/${taskId}/attachments/chunk-init`, {
     method: 'POST',
-    body: formData,
+  });
+
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  for (let index = 0; index < totalChunks; index++) {
+    const start = index * CHUNK_SIZE;
+    const end = Math.min(start + CHUNK_SIZE, file.size);
+    const chunkBlob = file.slice(start, end);
+
+    const chunkFormData = new FormData();
+    chunkFormData.append('uploadId', uploadId);
+    chunkFormData.append('chunkIndex', String(index));
+    chunkFormData.append('chunk', chunkBlob, file.name);
+
+    await request<{ success: boolean; chunkIndex: number }>(`/tasks/${taskId}/attachments/chunk-part`, {
+      method: 'POST',
+      body: chunkFormData,
+    });
+
+    if (onProgress) {
+      const percent = Math.round(((index + 1) / totalChunks) * 100);
+      onProgress(percent);
+    }
+  }
+
+  // Finalize the upload
+  return await request<import('./types').TaskAttachment>(`/tasks/${taskId}/attachments/chunk-complete`, {
+    method: 'POST',
+    body: {
+      uploadId,
+      fileName: file.name,
+      mimeType: file.type || 'application/octet-stream',
+      fileSize: file.size,
+    },
   });
 }
 
@@ -46,9 +97,36 @@ export function deleteAttachment(taskId: string, attachmentId: string): Promise<
   });
 }
 
-/** Get direct download URL for an attachment */
+/** Get direct download/preview URL for an attachment with token authentication */
 export function getAttachmentDownloadUrl(taskId: string, attachmentId: string): string {
-  return `/api/tasks/${taskId}/attachments/${attachmentId}/download`;
+  const token = getAccessToken();
+  const base = `/api/tasks/${taskId}/attachments/${attachmentId}/download`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+/** Download attachment as a file using authenticated fetch */
+export async function downloadAttachmentFile(taskId: string, attachmentId: string, fileName: string): Promise<void> {
+  const url = getAttachmentDownloadUrl(taskId, attachmentId);
+  const token = getAccessToken();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, { headers });
+  if (!res.ok) {
+    throw new Error(`Failed to download file (${res.status})`);
+  }
+
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(objectUrl);
 }
 
 

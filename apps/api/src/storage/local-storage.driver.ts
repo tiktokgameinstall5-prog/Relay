@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { StorageDriver, StoredFileMetadata } from './storage.interface';
 
@@ -7,7 +8,9 @@ export class LocalStorageDriver implements StorageDriver {
   private readonly baseDir: string;
 
   constructor(baseDir?: string) {
-    this.baseDir = resolve(baseDir || process.env.STORAGE_LOCAL_DIR || './.storage');
+    const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+    const defaultDir = isServerless ? join(tmpdir(), 'relay-storage') : './.storage';
+    this.baseDir = resolve(baseDir || process.env.STORAGE_LOCAL_DIR || defaultDir);
   }
 
   private resolvePath(storageKey: string): string {

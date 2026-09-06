@@ -22,6 +22,7 @@ vi.mock('../api/workflow', () => ({
   listAttachments: vi.fn(),
   uploadAttachment: vi.fn(),
   deleteAttachment: vi.fn(),
+  downloadAttachmentFile: vi.fn(),
   getAttachmentDownloadUrl: vi.fn((taskId: string, attId: string) => `/api/tasks/${taskId}/attachments/${attId}/download`),
 }));
 const mockedWorkflow = vi.mocked(workflowApi);

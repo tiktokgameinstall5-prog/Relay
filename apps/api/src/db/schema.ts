@@ -19,6 +19,7 @@
 import {
   pgTable,
   pgEnum,
+  customType,
   uuid,
   text,
   integer,
@@ -275,6 +276,7 @@ export const taskAttachment = pgTable(
     mimeType: text('mime_type').notNull(),
     storageKey: text('storage_key').notNull(),
     checksumSha256: text('checksum_sha256').notNull(),
+    fileData: customType<{ data: Buffer }>({ dataType: () => 'bytea' })('file_data'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
