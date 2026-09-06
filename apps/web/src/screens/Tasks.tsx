@@ -11,9 +11,11 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   ArrowRightLeft,
+  Check,
   CheckCircle2,
   ChevronDown,
   Clock,
+  Copy,
   Download,
   FileText,
   Film,
@@ -222,6 +224,100 @@ function EmptyTasksState({
   );
 }
 
+function TaskDescriptionBox({ description }: { description: string }) {
+  const [copied, setCopied] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // Check if description is long (more than 400 characters or more than 6 lines)
+  const isLong = description.length > 400 || description.split('\n').length > 6;
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(description);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Fallback copy for environments where clipboard API is restricted
+      const el = document.createElement('textarea');
+      el.value = description;
+      el.setAttribute('readonly', '');
+      el.style.position = 'absolute';
+      el.style.left = '-9999px';
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
+
+  return (
+    <div className="mt-3.5 rounded-lg border border-hairline bg-slate-50/80 p-3.5 transition-colors hover:bg-slate-50">
+      <div className="flex items-center justify-between gap-2 pb-2 border-b border-hairline/60">
+        <div className="flex items-center gap-1.5">
+          <FileText size={13} className="text-signal" />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+            Description & Instructions
+          </span>
+          {isLong && (
+            <span className="text-[10px] text-faint font-normal">
+              ({description.trim().split(/\s+/).filter(Boolean).length} words)
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {isLong && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded((prev) => !prev)}
+              className="text-[11px] font-medium text-signal hover:underline"
+            >
+              {isExpanded ? 'Show less' : 'Expand full text'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center gap-1.5 rounded-md border border-hairline bg-white px-2.5 py-1 text-xs font-medium text-ink shadow-2xs transition-all hover:border-active hover:bg-blue-50/40 hover:text-active active:scale-95"
+            title="Copy entire description to clipboard"
+          >
+            {copied ? (
+              <>
+                <Check size={13} className="text-emerald-600" />
+                <span className="text-emerald-600 font-semibold">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy size={13} className="text-muted" />
+                <span>Copy description</span>
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+
+      <div className="relative mt-2.5">
+        <div
+          className={`select-text font-sans text-xs leading-relaxed text-ink whitespace-pre-wrap break-words ${
+            !isExpanded && isLong ? 'max-h-36 overflow-hidden' : ''
+          }`}
+        >
+          {description}
+        </div>
+        {!isExpanded && isLong && (
+          <div
+            onClick={() => setIsExpanded(true)}
+            className="absolute inset-x-0 bottom-0 flex h-14 cursor-pointer items-end justify-center bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent pb-0.5 text-xs font-medium text-signal hover:underline"
+          >
+            Click to view full description ({description.length.toLocaleString()} characters)
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function TaskCard({
   task,
   currentUserId,
@@ -354,9 +450,6 @@ function TaskCard({
             </span>
             <div>
               <h2 className="font-medium text-ink">{task.name}</h2>
-              {task.description && (
-                <p className="text-muted mt-0.5 line-clamp-1 text-xs">{task.description}</p>
-              )}
             </div>
           </div>
 
@@ -367,6 +460,11 @@ function TaskCard({
             <StatusChip status={task.status} />
           </div>
         </div>
+
+        {/* Full Task Description with Complete Visibility & 1-Click Copy */}
+        {task.description && (
+          <TaskDescriptionBox description={task.description} />
+        )}
 
         {/* Relay Chain Visualization */}
         <div className="mt-4 rounded-lg bg-wash p-3">
@@ -1228,16 +1326,35 @@ function CreateTaskModal({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-medium text-muted">
-            Description (optional)
-          </label>
+          <div className="mb-1 flex items-center justify-between">
+            <label className="block text-xs font-medium text-muted">
+              Description & Instructions (optional · long text supported)
+            </label>
+            {description.length > 0 && (
+              <span className="text-[11px] text-faint">
+                {description.trim().split(/\s+/).filter(Boolean).length} words · {description.length.toLocaleString()} chars
+              </span>
+            )}
+          </div>
           <textarea
-            rows={2}
+            rows={5}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Brief notes or instructions for the assignee..."
-            className="focus:ring-signal w-full rounded-lg border border-hairline px-3 py-2 text-sm outline-none focus:ring-2"
+            placeholder="Detailed instructions, requirements, deliverables, or long text / specifications for this task..."
+            className="focus:ring-signal min-h-[110px] w-full resize-y rounded-lg border border-hairline px-3 py-2 text-sm font-sans leading-relaxed outline-none focus:ring-2"
           />
+          <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+            <span>Supports long instructions, multi-paragraph text, and bullet points.</span>
+            {description.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setDescription('')}
+                className="text-faint hover:text-red-500 transition-colors"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Attachment Upload Section */}

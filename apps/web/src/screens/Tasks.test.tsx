@@ -773,5 +773,81 @@ describe('Tasks Screen', () => {
     ).toBeInTheDocument();
     expect(mockedWorkflow.createTask).not.toHaveBeenCalled();
   });
+
+  it('allows user to copy task description to clipboard with visual feedback', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([mockTaskInProgress]);
+
+    const writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: {
+        writeText: writeTextMock,
+      },
+      configurable: true,
+      writable: true,
+    });
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const copyBtn = await screen.findByRole('button', { name: /copy description/i });
+    expect(copyBtn).toBeInTheDocument();
+    await user.click(copyBtn);
+
+    expect(writeTextMock).toHaveBeenCalledWith('Produce launch video clip');
+    expect(await screen.findByText('Copied!')).toBeInTheDocument();
+  });
+
+  it('supports entering and submitting long text in task description', async () => {
+    const user = userEvent.setup();
+    mockedUseAuth.mockReturnValue({
+      user: fakeUser('manager', 'm1', 'Manager Alice'),
+      status: 'authed',
+      completeSignIn: vi.fn(),
+      signOut: vi.fn(),
+    });
+    mockedWorkflow.listTasks.mockResolvedValue([]);
+    mockedWorkflow.createTask.mockResolvedValue(mockTaskInProgress);
+
+    render(
+      <MemoryRouter>
+        <Tasks />
+      </MemoryRouter>,
+    );
+
+    const assignBtn = await screen.findByRole('button', { name: /assign first task/i });
+    await user.click(assignBtn);
+
+    const nameInput = screen.getByPlaceholderText(/brand launch video/i);
+    await user.type(nameInput, 'Long Text Relay Task');
+
+    const longDescription = 'Paragraph 1: Detailed specification.\n\nParagraph 2: Second section with deliverables.\n\nParagraph 3: Acceptance criteria.';
+    const descTextarea = screen.getByPlaceholderText(/detailed instructions, requirements/i);
+    await user.type(descTextarea, longDescription);
+
+    expect(screen.getByText(/words/i)).toBeInTheDocument();
+
+    const addBobBtn = await screen.findByRole('button', { name: /bob member/i });
+    await user.click(addBobBtn);
+
+    const submitBtn = screen.getByRole('button', { name: /create relay task/i });
+    await user.click(submitBtn);
+
+    expect(mockedWorkflow.createTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: 'Long Text Relay Task',
+        description: longDescription,
+      }),
+    );
+  });
 });
 

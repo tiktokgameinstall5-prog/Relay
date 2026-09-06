@@ -35,14 +35,14 @@ export class CreateTaskDto {
   type!: TaskType;
 
   @ApiPropertyOptional({
-    maxLength: 4000,
+    maxLength: 100000,
     example: 'Produce, edit, and QA the product launch video per brand guidelines.',
-    description: 'Detailed instructions or context for the relay chain.',
+    description: 'Detailed instructions, specifications, or long text context for the relay chain.',
   })
   @IsOptional()
   @IsString()
   @Transform(trim)
-  @MaxLength(4000)
+  @MaxLength(100000)
   description?: string;
 
   @ApiPropertyOptional({
