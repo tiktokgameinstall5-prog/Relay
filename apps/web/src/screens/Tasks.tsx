@@ -256,6 +256,8 @@ function TaskCard({
     durationSeconds: step.durationSeconds,
   }));
 
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+
   async function handleForward(targetUserId?: string) {
     setForwarding(true);
     try {
@@ -271,6 +273,38 @@ function TaskCard({
         onForwardError(err.message);
       } else {
         onForwardError('Failed to forward task step.');
+      }
+    } finally {
+      setForwarding(false);
+    }
+  }
+
+  function handleAddSequenceStep(memberId: string) {
+    if (selectedMemberIds.includes(memberId)) return;
+    setSelectedMemberIds((prev) => [...prev, memberId]);
+  }
+
+  function handleRemoveSequenceStep(index: number) {
+    setSelectedMemberIds((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleAddAllSequence() {
+    setSelectedMemberIds(eligiblePeers.map((m) => m.id));
+  }
+
+  async function handleAssignSequence() {
+    if (selectedMemberIds.length === 0) return;
+    setForwarding(true);
+    try {
+      await forwardStep(task.id, { memberIds: selectedMemberIds });
+      setShowHandoffPicker(false);
+      setSelectedMemberIds([]);
+      onForwardSuccess();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        onForwardError(err.message);
+      } else {
+        onForwardError('Failed to assign team relay sequence.');
       }
     } finally {
       setForwarding(false);
@@ -381,7 +415,7 @@ function TaskCard({
                   className="text-xs"
                 >
                   <ArrowRightLeft size={13} className="-ml-0.5" />
-                  {userRole === 'manager' ? 'Assign to team member' : 'Hand off to peer'}
+                  {userRole === 'manager' ? 'Assign relay sequence to team' : 'Hand off to peer'}
                   <ChevronDown size={12} className="ml-1 opacity-60" />
                 </Button>
               )}
@@ -403,15 +437,155 @@ function TaskCard({
           )}
         </div>
 
-        {/* Peer Hand-off Selector Flyout */}
-        {showHandoffPicker && isMyActiveStep && (
+        {/* Manager: Relay Sequence Builder Flyout */}
+        {showHandoffPicker && isMyActiveStep && userRole === 'manager' && (
+          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/70 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold text-ink text-xs sm:text-sm flex items-center gap-1.5">
+                  <ArrowRightLeft size={14} className="text-active" />
+                  Assign relay sequence to team
+                </h3>
+                <p className="text-muted text-[11px] mt-0.5">
+                  Add team members in the order work should flow. Step 1 starts immediately upon assignment.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowHandoffPicker(false);
+                  setSelectedMemberIds([]);
+                }}
+                className="text-muted hover:text-ink p-1"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {loadingMembers ? (
+              <p className="text-muted mt-3 text-xs">Loading team roster...</p>
+            ) : eligiblePeers.length === 0 ? (
+              <p className="text-muted mt-3 text-xs">No active team members found in your team roster.</p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {/* Selected Sequence Steps */}
+                {selectedMemberIds.length > 0 ? (
+                  <div className="space-y-1.5 rounded-lg border border-blue-100 bg-white p-2.5 shadow-2xs">
+                    <div className="flex items-center justify-between pb-1 border-b border-hairline text-[11px] text-muted font-medium">
+                      <span>Ordered relay sequence ({selectedMemberIds.length} steps):</span>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMemberIds([])}
+                        className="text-faint hover:text-red-600 transition-colors"
+                      >
+                        Clear sequence
+                      </button>
+                    </div>
+                    {selectedMemberIds.map((memId, idx) => {
+                      const m = eligiblePeers.find((p) => p.id === memId);
+                      const mName = m?.name || 'Member';
+                      return (
+                        <div
+                          key={`${memId}-${idx}`}
+                          className="flex items-center justify-between rounded-md bg-wash px-2.5 py-1.5 text-xs"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="flex h-4 w-4 items-center justify-center rounded-full bg-active text-[10px] font-bold text-white">
+                              {idx + 1}
+                            </span>
+                            <Avatar name={mName} size={18} />
+                            <span className="font-medium text-ink">{mName}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSequenceStep(idx)}
+                            className="text-faint hover:text-red-500"
+                            title="Remove step"
+                          >
+                            <X size={13} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-dashed border-blue-200 bg-white/70 p-3 text-center text-xs text-muted">
+                    No sequence steps added yet. Click members below to build the relay chain.
+                  </div>
+                )}
+
+                {/* Member selection & Quick Add */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted font-medium">Add steps to chain:</span>
+                    {eligiblePeers.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={handleAddAllSequence}
+                        className="text-signal hover:underline font-medium text-xs"
+                      >
+                        Quick: Add all {eligiblePeers.length} members in order
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {eligiblePeers.map((peer) => {
+                      const isSelected = selectedMemberIds.includes(peer.id);
+                      return (
+                        <button
+                          key={peer.id}
+                          type="button"
+                          disabled={isSelected || forwarding}
+                          onClick={() => handleAddSequenceStep(peer.id)}
+                          className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                            isSelected
+                              ? 'border-hairline bg-cool-slate text-faint cursor-not-allowed'
+                              : 'border-blue-200 bg-white text-ink hover:border-active hover:bg-blue-50 hover:text-active'
+                          }`}
+                        >
+                          <Plus size={12} className={isSelected ? 'text-faint' : 'text-active'} />
+                          <Avatar name={peer.name} size={16} />
+                          <span>{peer.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Submit Sequence Button */}
+                <div className="flex items-center justify-end gap-2 border-t border-blue-100 pt-3">
+                  <Button
+                    variant="secondary"
+                    onClick={() => {
+                      setShowHandoffPicker(false);
+                      setSelectedMemberIds([]);
+                    }}
+                    className="text-xs"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="primary"
+                    disabled={forwarding || selectedMemberIds.length === 0}
+                    onClick={handleAssignSequence}
+                    className="bg-active hover:bg-blue-600 font-semibold text-xs"
+                  >
+                    <Send size={13} className="-ml-0.5" />
+                    {forwarding
+                      ? 'Assigning...'
+                      : `Assign Relay to Team (${selectedMemberIds.length} ${selectedMemberIds.length === 1 ? 'step' : 'steps'})`}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Member: Single Peer Hand-off Selector Flyout */}
+        {showHandoffPicker && isMyActiveStep && userRole === 'member' && (
           <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-ink">
-                {userRole === 'manager'
-                  ? 'Select team member to assign to:'
-                  : 'Select teammate to hand off to:'}
-              </span>
+              <span className="font-semibold text-ink">Select teammate to hand off to:</span>
               <button
                 type="button"
                 onClick={() => setShowHandoffPicker(false)}
@@ -424,11 +598,7 @@ function TaskCard({
             {loadingMembers ? (
               <p className="text-muted mt-2 text-xs">Loading team roster...</p>
             ) : eligiblePeers.length === 0 ? (
-              <p className="text-muted mt-2 text-xs">
-                {userRole === 'manager'
-                  ? 'No eligible team members found in your team.'
-                  : 'No eligible teammates found in your team.'}
-              </p>
+              <p className="text-muted mt-2 text-xs">No eligible teammates found in your team.</p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {eligiblePeers.map((peer) => (

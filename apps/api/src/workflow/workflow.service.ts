@@ -520,7 +520,7 @@ export class WorkflowService {
     return await this.db.tx(async (c) => {
       // 1. Verify task exists in tenant slice
       const taskRes = await c.query<TaskDbRow>(
-        `SELECT id, org_id, manager_id, team_id, status FROM task WHERE id = $1`,
+        `SELECT id, org_id, manager_id, team_id, name, status FROM task WHERE id = $1`,
         [taskId],
       );
       if (taskRes.rows.length === 0) {
@@ -556,8 +556,109 @@ export class WorkflowService {
 
       const completedStepOrder = updateRes.rows[0].step_order;
 
-      // 3. Branch: Peer Hand-Off vs Sequential Forward
-      if (dto?.targetUserId) {
+      // 3. Branch: Full Relay Sequence Assignment (Manager) vs Peer Hand-Off vs Sequential Forward
+      if (dto?.memberIds && dto.memberIds.length > 0) {
+        if (actor.role !== 'manager') {
+          throw new ForbiddenException('Only managers can configure a full team relay sequence');
+        }
+
+        const memberIds = dto.memberIds;
+        if (new Set(memberIds).size !== memberIds.length) {
+          throw new BadRequestException('A member cannot be assigned to multiple steps in the same relay');
+        }
+
+        // Validate all members belong to the manager's team
+        const membersRes = await c.query<{ id: string; email: string; name: string; team_id: string | null }>(
+          `SELECT id, email, name, team_id FROM "user"
+            WHERE manager_id = $1 AND org_id = $2 AND status = 'active' AND role = 'member' AND id = ANY($3::uuid[])`,
+          [actor.userId, actor.orgId, memberIds],
+        );
+        if (membersRes.rows.length !== memberIds.length) {
+          throw new BadRequestException('One or more selected members do not belong to your team');
+        }
+
+        // Resolve target teamId
+        const memberWithTeam = membersRes.rows.find((m) => m.team_id);
+        const targetTeamId = task.team_id || memberWithTeam?.team_id || null;
+
+        if (!task.team_id && targetTeamId) {
+          await c.query(
+            `UPDATE task SET team_id = $1, updated_at = $2 WHERE id = $3`,
+            [targetTeamId, now, taskId],
+          );
+        }
+
+        // Delete any existing future pending steps after the completed step
+        await c.query(
+          `DELETE FROM task_step WHERE task_id = $1 AND step_order > $2 AND status = 'pending'`,
+          [taskId, completedStepOrder],
+        );
+
+        // Insert new ordered sequence starting at completedStepOrder + 1
+        const createdStepIds: string[] = [];
+        for (let i = 0; i < memberIds.length; i++) {
+          const stepId = randomUUID();
+          createdStepIds.push(stepId);
+          const isFirst = i === 0;
+          const stepStatus: TaskStepStatus = isFirst ? 'active' : 'pending';
+          await c.query(
+            `INSERT INTO task_step (
+               id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+            [
+              stepId,
+              actor.orgId,
+              task.manager_id,
+              taskId,
+              memberIds[i],
+              completedStepOrder + 1 + i,
+              stepStatus,
+              isFirst ? now : null,
+              now,
+            ],
+          );
+        }
+
+        // Send notifications to members
+        const notifs: CreateNotificationInput[] = [];
+        const firstMember = membersRes.rows.find((m) => m.id === memberIds[0]);
+        if (firstMember) {
+          notifs.push({
+            orgId: actor.orgId,
+            userId: memberIds[0],
+            managerId: task.manager_id,
+            type: 'step_activated',
+            title: `Task assigned: ${task.name}`,
+            body: `Your manager assigned task "${task.name}" to your team. Step 1 is now with you.`,
+            data: { taskId, stepId: createdStepIds[0], stepOrder: completedStepOrder + 1 },
+            emailTo: firstMember.email,
+            emailSubject: `Task assigned: ${task.name}`,
+            emailBody: `Hi ${firstMember.name},\n\nStep 1 of the relay for "${task.name}" has been assigned to you. Please begin working on it.`,
+          });
+        }
+
+        for (let i = 1; i < memberIds.length; i++) {
+          const mem = membersRes.rows.find((m) => m.id === memberIds[i]);
+          if (mem) {
+            notifs.push({
+              orgId: actor.orgId,
+              userId: memberIds[i],
+              managerId: task.manager_id,
+              type: 'task_assigned',
+              title: `New team task: ${task.name}`,
+              body: `You are assigned to Step ${i + 1} of the relay for "${task.name}".`,
+              data: { taskId, stepId: createdStepIds[i], stepOrder: completedStepOrder + 1 + i },
+            });
+          }
+        }
+        await this.notificationService.createNotifications(c, notifs);
+
+        await this.writeAuditLog(c, actor, 'task_step.relay_assigned', taskId, {
+          completedStepOrder,
+          totalNewSteps: memberIds.length,
+          memberIds,
+        });
+      } else if (dto?.targetUserId) {
         if (dto.targetUserId === actor.userId) {
           throw new BadRequestException('Cannot hand off task to yourself');
         }

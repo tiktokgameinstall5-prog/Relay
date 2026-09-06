@@ -229,6 +229,7 @@ export interface CreateTaskInput {
 
 export interface ForwardStepInput {
   targetUserId?: string | undefined;
+  memberIds?: string[] | undefined;
 }
 
 export interface TaskAttachment {
