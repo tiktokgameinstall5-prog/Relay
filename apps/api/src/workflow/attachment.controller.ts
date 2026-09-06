@@ -29,7 +29,12 @@ import type { Request, Response } from 'express';
 import { OwnedResource } from '../auth/decorators/owned-resource.decorator';
 import type { CurrentUser } from '../db/tenant-context';
 import { AttachmentService } from './attachment.service';
-import type { TaskAttachmentDto } from './dto/attachment.dto';
+import type {
+  CompleteSignedUploadDto,
+  SignedUploadUrlRequestDto,
+  SignedUploadUrlResponseDto,
+  TaskAttachmentDto,
+} from './dto/attachment.dto';
 
 interface RequestWithUser extends Request {
   user: CurrentUser;
@@ -144,6 +149,43 @@ export class AttachmentController {
   @ApiOkResponse({ description: 'List of task attachments.' })
   @ApiNotFoundResponse({ description: 'Task not found or outside tenant slice.' })
   @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token.' })
+  @ApiOperation({
+    summary: 'Request signed upload URL for direct Supabase storage upload',
+    description: 'Generates a short-lived signed upload URL to upload directly to Supabase Storage.',
+  })
+  @ApiBearerAuth()
+  @OwnedResource({ table: 'task', param: 'taskId' })
+  @Post(':taskId/attachments/signed-upload-url')
+  async getSignedUploadUrl(
+    @Req() req: RequestWithUser,
+    @Param('taskId') taskId: string,
+    @Body() dto: SignedUploadUrlRequestDto,
+  ): Promise<SignedUploadUrlResponseDto> {
+    return this.attachmentService.createSignedUploadUrl(req.user, taskId, dto);
+  }
+
+  @ApiOperation({
+    summary: 'Complete signed upload and register attachment in database',
+  })
+  @ApiBearerAuth()
+  @OwnedResource({ table: 'task', param: 'taskId' })
+  @Post(':taskId/attachments/complete-signed-upload')
+  async completeSignedUpload(
+    @Req() req: RequestWithUser,
+    @Param('taskId') taskId: string,
+    @Body() dto: CompleteSignedUploadDto,
+  ): Promise<TaskAttachmentDto> {
+    return this.attachmentService.completeSignedUpload(req.user, taskId, dto);
+  }
+
+  @ApiOperation({
+    summary: 'List all attachments for a task',
+    description: 'Returns metadata for all attachments on the specified task.',
+  })
+  @ApiBearerAuth()
+  @ApiOkResponse({ description: 'List of attachments.' })
+  @ApiNotFoundResponse({ description: 'Task not found or outside tenant slice.' })
+  @ApiUnauthorizedResponse({ description: 'Missing or invalid bearer token.' })
   @OwnedResource({ table: 'task', param: 'taskId' })
   @Get(':taskId/attachments')
   async list(
@@ -170,11 +212,15 @@ export class AttachmentController {
     @Param('attachmentId') attachmentId: string,
     @Res() res: Response,
   ): Promise<void> {
-    const { attachment, buffer } = await this.attachmentService.getAttachment(
+    const { attachment, buffer, downloadUrl } = await this.attachmentService.getAttachment(
       req.user,
       taskId,
       attachmentId,
     );
+
+    if (downloadUrl) {
+      return res.redirect(downloadUrl);
+    }
 
     res.setHeader('Content-Type', attachment.mimeType || 'application/octet-stream');
     res.setHeader(

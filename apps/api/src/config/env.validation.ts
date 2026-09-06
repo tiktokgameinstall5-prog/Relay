@@ -124,6 +124,9 @@ export interface AppEnv {
   SMTP_USER?: string;
   /** SMTP password or API token. */
   SMTP_PASS?: string;
+  SUPABASE_URL?: string;
+  SUPABASE_SERVICE_ROLE_KEY?: string;
+  SUPABASE_STORAGE_BUCKET?: string;
 }
 
 export type MailDriver = 'console' | 'smtp';
@@ -441,6 +444,9 @@ export function validateEnv(source: NodeJS.ProcessEnv = process.env): AppEnv {
     SMTP_SECURE: smtpSecure,
     SMTP_USER: smtpUser,
     SMTP_PASS: smtpPass,
+    SUPABASE_URL: source.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: source.SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_STORAGE_BUCKET: source.SUPABASE_STORAGE_BUCKET || 'task-attachments',
   };
 
   if (problems.length > 0) fail(problems);

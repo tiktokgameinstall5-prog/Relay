@@ -32,13 +32,68 @@ export function listAttachments(taskId: string): Promise<import('./types').TaskA
 const CHUNK_THRESHOLD = 3.5 * 1024 * 1024; // 3.5MB (Vercel payload limit is 4.5MB)
 const CHUNK_SIZE = 2 * 1024 * 1024; // 2MB chunks
 
-/** POST /api/tasks/:id/attachments — upload a file or master video to a task (supports chunked upload for >3.5MB) */
+/** POST /api/tasks/:id/attachments — upload a file or master video to a task (direct to Supabase Storage via signed URL) */
 export async function uploadAttachment(
   taskId: string,
   file: File,
   onProgress?: (percent: number) => void,
 ): Promise<import('./types').TaskAttachment> {
-  // If file is smaller than threshold, do direct single-request upload
+  // 1. Primary path: Direct upload to Supabase Storage via Signed URL (0 MB load on NestJS)
+  try {
+    const signedData = await request<{
+      signedUrl: string;
+      token: string;
+      storageKey: string;
+      path: string;
+    }>(`/tasks/${taskId}/attachments/signed-upload-url`, {
+      method: 'POST',
+      body: {
+        fileName: file.name,
+        mimeType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+      },
+    });
+
+    if (signedData?.signedUrl) {
+      if (onProgress) onProgress(15);
+
+      // Upload directly to Supabase Storage
+      const uploadRes = await fetch(signedData.signedUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'application/octet-stream',
+        },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Supabase direct upload failed (${uploadRes.status})`);
+      }
+
+      if (onProgress) onProgress(85);
+
+      // Register attachment metadata in database
+      const savedAttachment = await request<import('./types').TaskAttachment>(
+        `/tasks/${taskId}/attachments/complete-signed-upload`,
+        {
+          method: 'POST',
+          body: {
+            storageKey: signedData.storageKey,
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            fileSize: file.size,
+          },
+        },
+      );
+
+      if (onProgress) onProgress(100);
+      return savedAttachment;
+    }
+  } catch (err) {
+    console.warn('Direct Supabase signed upload failed, falling back to server upload:', err);
+  }
+
+  // Fallback: If file is smaller than threshold, do direct single-request upload
   if (file.size <= CHUNK_THRESHOLD) {
     const formData = new FormData();
     formData.append('file', file);

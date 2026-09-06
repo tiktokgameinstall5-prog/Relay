@@ -12,7 +12,12 @@ import { DbService } from '../db/db.service';
 import type { CurrentUser } from '../db/tenant-context';
 import type { TaskType } from '../db/schema';
 import { StorageService } from '../storage/storage.service';
-import type { TaskAttachmentDto } from './dto/attachment.dto';
+import type {
+  CompleteSignedUploadDto,
+  SignedUploadUrlRequestDto,
+  SignedUploadUrlResponseDto,
+  TaskAttachmentDto,
+} from './dto/attachment.dto';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -350,11 +355,128 @@ export class AttachmentService {
     });
   }
 
+  async createSignedUploadUrl(
+    actor: CurrentUser,
+    taskId: string,
+    dto: SignedUploadUrlRequestDto,
+  ): Promise<SignedUploadUrlResponseDto> {
+    if (!UUID_RE.test(taskId)) {
+      throw new NotFoundException();
+    }
+
+    if (!dto.fileName) {
+      throw new BadRequestException('fileName is required');
+    }
+
+    return this.db.tx(async (c) => {
+      const taskRes = await c.query<{ id: string; org_id: string; manager_id: string; type: TaskType }>(
+        `SELECT id, org_id, manager_id, type FROM task WHERE id = $1`,
+        [taskId],
+      );
+
+      if (taskRes.rowCount === 0) {
+        throw new NotFoundException('Task not found');
+      }
+
+      const task = taskRes.rows[0];
+
+      // Validate MIME type against task.type
+      validateAttachmentMimeType(task.type, dto.fileName, dto.mimeType || 'application/octet-stream');
+
+      // Validate file size constraints per task type
+      if (task.type === 'video' && dto.fileSize > 50 * 1024 * 1024) {
+        throw new BadRequestException('Video attachments cannot exceed 50MB');
+      } else if (task.type === 'file' && dto.fileSize > 20 * 1024 * 1024) {
+        throw new BadRequestException('File attachments cannot exceed 20MB');
+      } else if (task.type === 'text' && dto.fileSize > 10 * 1024 * 1024) {
+        throw new BadRequestException('Text attachments cannot exceed 10MB');
+      }
+
+      const storageKey = this.storage.generateKey(actor.orgId, taskId, dto.fileName);
+      const res = await this.storage.createSignedUploadUrl(storageKey);
+
+      return {
+        signedUrl: res.signedUrl,
+        token: res.token,
+        storageKey,
+        path: res.path,
+      };
+    });
+  }
+
+  async completeSignedUpload(
+    actor: CurrentUser,
+    taskId: string,
+    dto: CompleteSignedUploadDto,
+  ): Promise<TaskAttachmentDto> {
+    if (!UUID_RE.test(taskId)) {
+      throw new NotFoundException();
+    }
+
+    if (!dto.fileName || !dto.storageKey) {
+      throw new BadRequestException('fileName and storageKey are required');
+    }
+
+    return this.db.tx(async (c) => {
+      const taskRes = await c.query<{ id: string; org_id: string; manager_id: string; type: TaskType }>(
+        `SELECT id, org_id, manager_id, type FROM task WHERE id = $1`,
+        [taskId],
+      );
+
+      if (taskRes.rowCount === 0) {
+        throw new NotFoundException('Task not found');
+      }
+
+      const task = taskRes.rows[0];
+
+      validateAttachmentMimeType(task.type, dto.fileName, dto.mimeType || 'application/octet-stream');
+
+      const checksumSha256 = dto.checksumSha256 || createHash('sha256').update(dto.storageKey).digest('hex');
+
+      const insertRes = await c.query<AttachmentDbRow>(
+        `INSERT INTO task_attachment (
+           org_id, manager_id, task_id, uploaded_by_user_id,
+           file_name, file_size, mime_type, storage_key, checksum_sha256
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         RETURNING *`,
+        [
+          actor.orgId,
+          task.manager_id,
+          taskId,
+          actor.userId,
+          dto.fileName,
+          dto.fileSize || 0,
+          dto.mimeType || 'application/octet-stream',
+          dto.storageKey,
+          checksumSha256,
+        ],
+      );
+
+      const row = insertRes.rows[0];
+
+      await this.writeAudit(c, {
+        orgId: actor.orgId,
+        actorUserId: actor.userId,
+        action: 'task_attachment.uploaded',
+        targetType: 'task_attachment',
+        targetId: row.id,
+        metadata: {
+          taskId,
+          fileName: dto.fileName,
+          fileSize: dto.fileSize,
+          storageKey: dto.storageKey,
+        },
+      });
+
+      return this.mapToDto(row);
+    });
+  }
+
   async getAttachment(
     actor: CurrentUser,
     taskId: string,
     attachmentId: string,
-  ): Promise<{ attachment: TaskAttachmentDto; buffer: Buffer }> {
+  ): Promise<{ attachment: TaskAttachmentDto; buffer?: Buffer; downloadUrl?: string }> {
     if (!UUID_RE.test(taskId) || !UUID_RE.test(attachmentId)) {
       throw new NotFoundException();
     }
@@ -370,22 +492,33 @@ export class AttachmentService {
       }
 
       const row = res.rows[0];
+
+      let downloadUrl: string | null = null;
+      if (this.storage.isSupabaseEnabled()) {
+        try {
+          downloadUrl = await this.storage.createSignedDownloadUrl(row.storage_key, 3600);
+        } catch {
+          // safe fallback
+        }
+      }
+
       let buffer: Buffer | null = row.file_data ?? null;
 
-      if (!buffer) {
+      if (!buffer && !downloadUrl) {
         const stored = await this.storage.get(row.storage_key);
         if (stored) {
           buffer = stored.buffer;
         }
       }
 
-      if (!buffer) {
+      if (!buffer && !downloadUrl) {
         throw new NotFoundException('File data not found');
       }
 
       return {
         attachment: this.mapToDto(row),
-        buffer,
+        buffer: buffer ?? undefined,
+        downloadUrl: downloadUrl ?? undefined,
       };
     });
   }
