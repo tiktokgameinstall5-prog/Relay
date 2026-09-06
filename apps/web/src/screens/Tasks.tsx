@@ -60,7 +60,6 @@ import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Alert } from '../components/Alert';
 import { ModalShell } from '../components/ModalShell';
-import { StatusChip } from '../components/StatusChip';
 import { RelayChain, type RelayStep } from '../components/RelayChain';
 import { Avatar } from '../components/Avatar';
 import { fmtDateTime } from '../lib/format';
@@ -127,19 +126,23 @@ export function Tasks() {
     <div className="mx-auto max-w-4xl">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-xl font-semibold">Tasks</h1>
-            <span className="flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-active">
-              <Radio size={10} className="animate-pulse" /> Live Relay
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-ink">Tasks</h1>
+            <span className="flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-600 border border-blue-200/60 shadow-2xs">
+              <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" /> Live Relay
             </span>
           </div>
-          <p className="text-muted mt-0.5 text-sm">
-            Ordered workflows moving sequentially through the relay chain.
+          <p className="text-muted mt-1 text-sm">
+            Ordered workflows moving sequentially through the team relay chain.
           </p>
         </div>
 
         {canAssign && (
-          <Button variant="primary" onClick={() => setShowCreateModal(true)}>
+          <Button
+            variant="primary"
+            onClick={() => setShowCreateModal(true)}
+            className="rounded-xl shadow-xs hover:shadow-sm font-medium transition-all"
+          >
             <Plus size={16} className="-ml-1" />
             Assign task
           </Button>
@@ -224,12 +227,38 @@ function EmptyTasksState({
   );
 }
 
+function TaskStatusBadge({ status }: { status: TaskStatus }) {
+  if (status === 'completed') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200/70">
+        <CheckCircle2 size={12} className="text-emerald-600" />
+        Completed
+      </span>
+    );
+  }
+  if (status === 'scheduled') {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700 border border-violet-200/70">
+        <Clock size={12} className="text-violet-600" />
+        Scheduled
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200/70">
+      <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+      In Progress
+    </span>
+  );
+}
+
 function TaskDescriptionBox({ description }: { description: string }) {
   const [copied, setCopied] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Check if description is long (more than 400 characters or more than 6 lines)
-  const isLong = description.length > 400 || description.split('\n').length > 6;
+  // Only offer collapse if text is truly colossal (e.g. over 1500 characters or over 20 lines)
+  const isColossal = description.length > 1500 || description.split('\n').length > 20;
+  const wordCount = description.trim().split(/\s+/).filter(Boolean).length;
 
   async function handleCopy() {
     try {
@@ -253,64 +282,56 @@ function TaskDescriptionBox({ description }: { description: string }) {
   }
 
   return (
-    <div className="mt-3.5 rounded-lg border border-hairline bg-slate-50/80 p-3.5 transition-colors hover:bg-slate-50">
-      <div className="flex items-center justify-between gap-2 pb-2 border-b border-hairline/60">
-        <div className="flex items-center gap-1.5">
-          <FileText size={13} className="text-signal" />
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+    <div className="mt-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 transition-colors hover:bg-slate-50/90">
+      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60">
+        <div className="flex items-center gap-2">
+          <FileText size={14} className="text-slate-400" />
+          <span className="text-xs font-semibold text-slate-700">
             Description & Instructions
           </span>
-          {isLong && (
-            <span className="text-[10px] text-faint font-normal">
-              ({description.trim().split(/\s+/).filter(Boolean).length} words)
+          {wordCount > 0 && (
+            <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+              {wordCount} {wordCount === 1 ? 'word' : 'words'}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          {isLong && (
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="text-[11px] font-medium text-signal hover:underline"
-            >
-              {isExpanded ? 'Show less' : 'Expand full text'}
-            </button>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 active:scale-95"
+          title="Copy full description to clipboard"
+        >
+          {copied ? (
+            <>
+              <Check size={13} className="text-emerald-600" />
+              <span className="text-emerald-600 font-semibold">Copied!</span>
+            </>
+          ) : (
+            <>
+              <Copy size={13} className="text-slate-400" />
+              <span>Copy description</span>
+            </>
           )}
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded-md border border-hairline bg-white px-2.5 py-1 text-xs font-medium text-ink shadow-2xs transition-all hover:border-active hover:bg-blue-50/40 hover:text-active active:scale-95"
-            title="Copy entire description to clipboard"
-          >
-            {copied ? (
-              <>
-                <Check size={13} className="text-emerald-600" />
-                <span className="text-emerald-600 font-semibold">Copied!</span>
-              </>
-            ) : (
-              <>
-                <Copy size={13} className="text-muted" />
-                <span>Copy description</span>
-              </>
-            )}
-          </button>
-        </div>
+        </button>
       </div>
 
-      <div className="relative mt-2.5">
+      <div className="mt-2.5">
         <div
-          className={`select-text font-sans text-xs leading-relaxed text-ink whitespace-pre-wrap break-words ${
-            !isExpanded && isLong ? 'max-h-36 overflow-hidden' : ''
+          className={`select-text font-sans text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words ${
+            !isExpanded && isColossal ? 'max-h-72 overflow-hidden' : ''
           }`}
         >
           {description}
         </div>
-        {!isExpanded && isLong && (
-          <div
-            onClick={() => setIsExpanded(true)}
-            className="absolute inset-x-0 bottom-0 flex h-14 cursor-pointer items-end justify-center bg-gradient-to-t from-slate-50 via-slate-50/80 to-transparent pb-0.5 text-xs font-medium text-signal hover:underline"
-          >
-            Click to view full description ({description.length.toLocaleString()} characters)
+        {isColossal && (
+          <div className="mt-2.5 pt-1.5 border-t border-slate-200/50 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setIsExpanded((prev) => !prev)}
+              className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
+            >
+              {isExpanded ? 'Show less' : `Show full text (${description.length.toLocaleString()} characters)`}
+            </button>
           </div>
         )}
       </div>
@@ -440,24 +461,24 @@ function TaskCard({
   );
 
   return (
-    <Panel className="overflow-hidden border border-hairline transition-shadow hover:shadow-sm">
-      <div className="p-5">
+    <Panel className="overflow-hidden rounded-2xl border border-slate-200/80 shadow-2xs transition-all hover:border-slate-300 hover:shadow-sm">
+      <div className="p-5 sm:p-6">
         {/* Header: Title, Type, Status & Progress */}
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-2.5">
-            <span className="flex h-7 w-7 items-center justify-center rounded-md bg-cool-slate">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 border border-slate-200/60 shadow-2xs">
               <TaskTypeIcon type={task.type} />
             </span>
             <div>
-              <h2 className="font-medium text-ink">{task.name}</h2>
+              <h2 className="text-base font-semibold text-slate-900 tracking-tight">{task.name}</h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
-            <span className="text-muted font-mono text-xs">
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 border border-slate-200/60">
               {task.completedSteps}/{task.totalSteps} steps
             </span>
-            <StatusChip status={task.status} />
+            <TaskStatusBadge status={task.status} />
           </div>
         </div>
 
@@ -467,20 +488,24 @@ function TaskCard({
         )}
 
         {/* Relay Chain Visualization */}
-        <div className="mt-4 rounded-lg bg-wash p-3">
-          <div className="mb-1 flex items-center justify-between text-xs">
-            <span className="text-muted font-medium">Relay sequence</span>
+        <div className="mt-4 rounded-xl border border-slate-200/60 bg-slate-50/50 p-4">
+          <div className="mb-2 flex items-center justify-between text-xs">
+            <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+              <ArrowRightLeft size={13} className="text-slate-400" />
+              Relay sequence
+            </span>
             {task.status === 'scheduled' ? (
-              <span className="text-[#579bfc] font-medium flex items-center gap-1">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-200/60">
                 <Clock size={12} />
                 {task.scheduledFor ? `Scheduled for: ${fmtDateTime(task.scheduledFor)}` : 'Scheduled for future'}
               </span>
             ) : task.currentAssignee ? (
-              <span className="text-active font-medium">
+              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50/90 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
                 Currently with: {task.currentAssignee.name}
               </span>
             ) : (
-              <span className="text-done flex items-center gap-1 font-medium">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
                 <CheckCircle2 size={12} /> Completed
               </span>
             )}
