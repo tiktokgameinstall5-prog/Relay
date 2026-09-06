@@ -55,7 +55,15 @@ export async function getVercelHandler(): Promise<any> {
 
 export default async function handler(req: any, res: any) {
   const server = await getVercelHandler();
-  return server(req, res);
+  if (res.writableEnded) return;
+  return new Promise<void>((resolve, reject) => {
+    res.on('finish', resolve);
+    res.on('close', resolve);
+    server(req, res, (err: any) => {
+      if (err) reject(err);
+      else resolve();
+    });
+  });
 }
 
 // Standalone execution when started via node / tsx (not in serverless environment)

@@ -28,11 +28,14 @@ export default async function handler(req: any, res: any) {
     }
     return await cachedHandler(req, res);
   } catch (err: any) {
+    cachedHandler = null;
     console.error('Serverless Execution Error:', err);
-    res.status(500).json({
-      message: 'Serverless Function Execution Error',
-      error: err.message,
-      stack: err.stack,
-    });
+    if (!res.headersSent && !res.writableEnded) {
+      res.status(500).json({
+        message: 'Serverless Function Execution Error',
+        error: err.message,
+        stack: err.stack,
+      });
+    }
   }
 }

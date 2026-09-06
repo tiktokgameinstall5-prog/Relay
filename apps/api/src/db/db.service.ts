@@ -40,7 +40,9 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     const cleanUrl = isCloud ? env.DATABASE_URL.replace(/[?&]sslmode=[^&]+/g, '') : env.DATABASE_URL;
     this.pool = new Pool({
       connectionString: cleanUrl,
-      max: 10,
+      max: process.env.VERCEL ? 3 : 10,
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
       ...(isCloud ? { ssl: { rejectUnauthorized: false } } : {}),
     });
   }
@@ -49,7 +51,18 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
     // Fail at startup rather than on the first request. A bad DATABASE_URL is a
     // deployment error, and finding it here means the process never reports
     // healthy while unable to serve.
-    const client = await this.pool.connect();
+    let client: PoolClient | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        client = await this.pool.connect();
+        break;
+      } catch (err) {
+        if (attempt === 3) throw err;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+    if (!client) return;
+
     try {
       const { rows } = await client.query<{ role: string; bypassrls: boolean }>(
         `SELECT current_user AS role,
