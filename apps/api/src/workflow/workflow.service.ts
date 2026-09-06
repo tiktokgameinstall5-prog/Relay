@@ -563,8 +563,8 @@ export class WorkflowService {
         }
 
         // Validate target user is a member belonging to the same manager/team slice
-        const targetRes = await c.query<{ id: string; manager_id: string; role: string }>(
-          `SELECT id, manager_id, role FROM "user" WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+        const targetRes = await c.query<{ id: string; manager_id: string; role: string; team_id: string | null }>(
+          `SELECT id, manager_id, role, team_id FROM "user" WHERE id = $1 AND org_id = $2 AND status = 'active'`,
           [dto.targetUserId, actor.orgId],
         );
         if (targetRes.rows.length === 0) {
@@ -573,6 +573,14 @@ export class WorkflowService {
         const targetUser = targetRes.rows[0];
         if (targetUser.role !== 'member' || targetUser.manager_id !== task.manager_id) {
           throw new BadRequestException('Target user must be a member of the same team');
+        }
+
+        // Backfill team_id on task if it was null (e.g. Owner -> Manager direct task)
+        if (!task.team_id && targetUser.team_id) {
+          await c.query(
+            `UPDATE task SET team_id = $1, updated_at = $2 WHERE id = $3`,
+            [targetUser.team_id, now, taskId],
+          );
         }
 
         // Check if target is already in future pending steps
@@ -663,6 +671,30 @@ export class WorkflowService {
             targetUserId: dto.targetUserId,
             promotedFromLaterStep: false,
           });
+        }
+
+        // Notify handoff recipient
+        const handoffAssigneeRes = await c.query<{ email: string; name: string; task_name: string }>(
+          `SELECT u.email, u.name, t.name as task_name
+             FROM "user" u
+             JOIN task t ON t.id = $1
+            WHERE u.id = $2`,
+          [taskId, dto.targetUserId],
+        );
+        if (handoffAssigneeRes.rows.length > 0) {
+          const row = handoffAssigneeRes.rows[0];
+          await this.notificationService.createNotifications(c, [{
+            orgId: actor.orgId,
+            userId: dto.targetUserId,
+            managerId: task.manager_id,
+            type: 'step_activated',
+            title: `Task step assigned to you: ${row.task_name}`,
+            body: `${actor.role === 'manager' ? 'Your manager' : 'Your teammate'} assigned a step of "${row.task_name}" to you. Please begin working on it.`,
+            data: { taskId, targetUserId: dto.targetUserId },
+            emailTo: row.email,
+            emailSubject: `Task step assigned to you: ${row.task_name}`,
+            emailBody: `Hi ${row.name},\n\nA step of "${row.task_name}" has been assigned to you.`,
+          }]);
         }
       } else {
         // Sequential progression
@@ -799,13 +831,29 @@ export class WorkflowService {
       );
 
       // 2. Fetch tasks. Owner sees scheduled tasks; team members and managers only see active/completed tasks.
+      // Team members do NOT see tasks assigned only to the manager until the manager assigns/forwards the task to them.
       const tasksRes = await c.query<TaskDbRow>(
         `SELECT t.id, t.org_id, t.manager_id, t.team_id, t.name, t.type, t.description,
                 t.created_by_user_id, COALESCE(u.name, 'Owner') AS created_by_name, t.status, t.scheduled_for,
                 t.created_at, t.updated_at
            FROM task t
            LEFT JOIN "user" u ON u.id = t.created_by_user_id
-          WHERE (app_current_role() = 'owner' OR t.status != 'scheduled')
+          WHERE (
+            app_current_role() = 'owner'
+            OR (app_current_role() = 'manager' AND t.status != 'scheduled')
+            OR (
+              app_current_role() = 'member'
+              AND t.status != 'scheduled'
+              AND (
+                (t.team_id IS NOT NULL AND t.team_id = (SELECT team_id FROM "user" WHERE id = app_current_user_id()))
+                OR EXISTS (
+                  SELECT 1 FROM task_step ts
+                  WHERE ts.task_id = t.id
+                    AND ts.assigned_user_id = app_current_user_id()
+                )
+              )
+            )
+          )
           ORDER BY t.created_at DESC`,
       );
 
@@ -854,7 +902,22 @@ export class WorkflowService {
          FROM task t
          LEFT JOIN "user" u ON u.id = t.created_by_user_id
         WHERE t.id = $1
-          AND (app_current_role() = 'owner' OR t.status != 'scheduled')`,
+          AND (
+            app_current_role() = 'owner'
+            OR (app_current_role() = 'manager' AND t.status != 'scheduled')
+            OR (
+              app_current_role() = 'member'
+              AND t.status != 'scheduled'
+              AND (
+                (t.team_id IS NOT NULL AND t.team_id = (SELECT team_id FROM "user" WHERE id = app_current_user_id()))
+                OR EXISTS (
+                  SELECT 1 FROM task_step ts
+                  WHERE ts.task_id = t.id
+                    AND ts.assigned_user_id = app_current_user_id()
+                )
+              )
+            )
+          )`,
       [taskId],
     );
     if (taskRes.rows.length === 0) {

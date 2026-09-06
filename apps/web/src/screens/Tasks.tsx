@@ -278,11 +278,23 @@ function TaskCard({
   }
 
   async function handleToggleHandoff() {
-    if (!showHandoffPicker && task.teamId && teamMembers.length === 0) {
+    if (!showHandoffPicker && teamMembers.length === 0) {
       setLoadingMembers(true);
       try {
-        const members = await listTeamMembers(task.teamId);
-        setTeamMembers(members);
+        if (task.teamId) {
+          const members = await listTeamMembers(task.teamId);
+          setTeamMembers(members);
+        } else if (userRole === 'manager') {
+          const teams = await listTeams();
+          if (teams.length > 0) {
+            const allMembers: MemberRow[] = [];
+            for (const t of teams) {
+              const members = await listTeamMembers(t.id);
+              allMembers.push(...members);
+            }
+            setTeamMembers(allMembers);
+          }
+        }
       } catch {
         // Fallback: use team members from steps
       } finally {
@@ -361,7 +373,7 @@ function TaskCard({
 
           {isMyActiveStep && (
             <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-              {task.teamId && (
+              {(task.teamId || userRole === 'manager') && (
                 <Button
                   variant="secondary"
                   onClick={handleToggleHandoff}
@@ -369,7 +381,7 @@ function TaskCard({
                   className="text-xs"
                 >
                   <ArrowRightLeft size={13} className="-ml-0.5" />
-                  Hand off to peer
+                  {userRole === 'manager' ? 'Assign to team member' : 'Hand off to peer'}
                   <ChevronDown size={12} className="ml-1 opacity-60" />
                 </Button>
               )}
@@ -395,7 +407,11 @@ function TaskCard({
         {showHandoffPicker && isMyActiveStep && (
           <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-ink">Select teammate to hand off to:</span>
+              <span className="font-semibold text-ink">
+                {userRole === 'manager'
+                  ? 'Select team member to assign to:'
+                  : 'Select teammate to hand off to:'}
+              </span>
               <button
                 type="button"
                 onClick={() => setShowHandoffPicker(false)}
@@ -408,7 +424,11 @@ function TaskCard({
             {loadingMembers ? (
               <p className="text-muted mt-2 text-xs">Loading team roster...</p>
             ) : eligiblePeers.length === 0 ? (
-              <p className="text-muted mt-2 text-xs">No eligible teammates found in your team.</p>
+              <p className="text-muted mt-2 text-xs">
+                {userRole === 'manager'
+                  ? 'No eligible team members found in your team.'
+                  : 'No eligible teammates found in your team.'}
+              </p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {eligiblePeers.map((peer) => (
