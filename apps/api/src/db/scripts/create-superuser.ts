@@ -29,7 +29,16 @@ async function main() {
   const orgName = args[3] || 'Relay Global Workspace';
 
   const migUrl = requireEnv('MIGRATION_DATABASE_URL');
-  const client = new Client({ connectionString: migUrl });
+  const isCloud =
+    migUrl.includes('sslmode=') ||
+    migUrl.includes('supabase.co') ||
+    migUrl.includes('pooler.supabase.com') ||
+    (process.env.NODE_ENV === 'production' && !migUrl.includes('localhost'));
+  const cleanUrl = isCloud ? migUrl.replace(/[?&]sslmode=[^&]+/g, '') : migUrl;
+  const client = new Client({
+    connectionString: cleanUrl,
+    ...(isCloud ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
 
   await client.connect();
 
