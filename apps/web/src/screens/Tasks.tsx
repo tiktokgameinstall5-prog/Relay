@@ -14,16 +14,20 @@ import {
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronRight,
   Clock,
   Copy,
   Download,
   FileText,
   Film,
+  PanelRightOpen,
   Paperclip,
   Plus,
   Radio,
+  Search,
   Send,
   Shield,
+  Sparkles,
   Trash2,
   UploadCloud,
   User,
@@ -63,6 +67,7 @@ import { ModalShell } from '../components/ModalShell';
 import { RelayChain, type RelayStep } from '../components/RelayChain';
 import { Avatar } from '../components/Avatar';
 import { fmtDateTime } from '../lib/format';
+import { TaskDetailDrawer } from '../components/TaskDetailDrawer';
 
 /** Poll interval for live relay updates (5 seconds) */
 const POLL_INTERVAL_MS = 5000;
@@ -87,6 +92,10 @@ export function Tasks() {
   const [tasks, setTasks] = useState<TaskResponse[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'scheduled' | 'completed'>('all');
+  const [selectedDrawerTaskId, setSelectedDrawerTaskId] = useState<string | null>(null);
 
   const fetchTasks = useCallback(async (isBackground = false) => {
     try {
@@ -122,6 +131,28 @@ export function Tasks() {
 
   const canAssign = user?.role === 'manager' || user?.role === 'owner';
 
+  const myActiveTasks =
+    tasks?.filter((t) => t.status === 'in_progress' && t.currentAssignee?.id === user?.id) ?? [];
+
+  const inProgressCount = tasks?.filter((t) => t.status === 'in_progress').length ?? 0;
+  const scheduledCount = tasks?.filter((t) => t.status === 'scheduled').length ?? 0;
+  const completedCount = tasks?.filter((t) => t.status === 'completed').length ?? 0;
+  const allCount = tasks?.length ?? 0;
+
+  const filteredTasks = tasks?.filter((t) => {
+    if (statusFilter !== 'all' && t.status !== statusFilter) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      const matchesName = t.name.toLowerCase().includes(q);
+      const matchesDesc = t.description?.toLowerCase().includes(q);
+      const matchesAssignee = t.currentAssignee?.name.toLowerCase().includes(q);
+      if (!matchesName && !matchesDesc && !matchesAssignee) return false;
+    }
+    return true;
+  });
+
+  const activeDrawerTask = tasks?.find((t) => t.id === selectedDrawerTaskId) ?? null;
+
   return (
     <div className="mx-auto max-w-4xl">
       <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
@@ -155,6 +186,143 @@ export function Tasks() {
         </div>
       )}
 
+      {/* Active Step Prompt Banner (Teamwork & Process Street style) */}
+      {myActiveTasks.length > 0 && (
+        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 to-indigo-50/60 p-4 shadow-2xs">
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
+              <span className="text-base">🏃</span>
+            </div>
+            <div>
+              <div className="text-xs font-semibold text-blue-950 flex items-center gap-1.5">
+                <span>The baton is with you</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
+              </div>
+              <p className="text-xs text-blue-800/90 mt-0.5">
+                You hold the active step on <span className="font-semibold">{myActiveTasks[0].name}</span>.
+                {myActiveTasks.length > 1 && ` (+${myActiveTasks.length - 1} other tasks waiting)`}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedDrawerTaskId(myActiveTasks[0].id)}
+            className="shrink-0 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors"
+          >
+            <span>Open & Forward</span>
+            <ChevronRight size={13} />
+          </button>
+        </div>
+      )}
+
+      {/* Search & Status Filters Toolbar (ClickUp & Asana style) */}
+      {tasks && tasks.length > 0 && (
+        <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+          {/* Status Filter Buttons */}
+          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
+                statusFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <span>All</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  statusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                }`}
+              >
+                {allCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('in_progress')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
+                statusFilter === 'in_progress'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <span>In Progress</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  statusFilter === 'in_progress' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {inProgressCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('scheduled')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
+                statusFilter === 'scheduled'
+                  ? 'bg-violet-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <span>Upcoming</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  statusFilter === 'scheduled' ? 'bg-white/20 text-white' : 'bg-violet-100 text-violet-800'
+                }`}
+              >
+                {scheduledCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter('completed')}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
+                statusFilter === 'completed'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+              }`}
+            >
+              <span>Completed</span>
+              <span
+                className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
+                  statusFilter === 'completed' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                {completedCount}
+              </span>
+            </button>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative flex-1 sm:max-w-xs">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
+              <Search size={14} />
+            </div>
+            <input
+              type="text"
+              placeholder="Filter tasks by name or person..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/70 py-1.5 pl-8 pr-7 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-2 text-slate-400 hover:text-slate-600"
+                title="Clear search"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="mt-6">
         {loading && tasks === null ? (
           <div className="text-muted py-16 text-center text-sm">Loading…</div>
@@ -164,14 +332,35 @@ export function Tasks() {
           </Panel>
         ) : tasks && tasks.length === 0 ? (
           <EmptyTasksState canAssign={canAssign} onAssign={() => setShowCreateModal(true)} />
-        ) : tasks ? (
+        ) : filteredTasks && filteredTasks.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center bg-white/60">
+            <FileText size={28} className="mx-auto text-slate-400" />
+            <h3 className="mt-3 text-sm font-semibold text-slate-800">No matching tasks found</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Try adjusting your search query or status filter to see other workflows.
+            </p>
+            <div className="mt-4">
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSearchQuery('');
+                  setStatusFilter('all');
+                }}
+                className="text-xs"
+              >
+                Reset filters
+              </Button>
+            </div>
+          </div>
+        ) : filteredTasks ? (
           <div className="space-y-4">
-            {tasks.map((task) => (
+            {filteredTasks.map((task) => (
               <TaskCard
                 key={task.id}
                 task={task}
                 currentUserId={user?.id ?? ''}
                 userRole={user?.role ?? 'member'}
+                onOpenDrawer={(t) => setSelectedDrawerTaskId(t.id)}
                 onForwardSuccess={() => {
                   setActionError(null);
                   fetchTasks(true);
@@ -191,6 +380,20 @@ export function Tasks() {
             setShowCreateModal(false);
             fetchTasks(true);
           }}
+        />
+      )}
+
+      {activeDrawerTask && (
+        <TaskDetailDrawer
+          task={activeDrawerTask}
+          currentUserId={user?.id ?? ''}
+          userRole={user?.role ?? 'member'}
+          onClose={() => setSelectedDrawerTaskId(null)}
+          onForwardSuccess={() => {
+            setActionError(null);
+            fetchTasks(true);
+          }}
+          onForwardError={(msg) => setActionError(msg)}
         />
       )}
     </div>
@@ -356,12 +559,14 @@ function TaskCard({
   task,
   currentUserId,
   userRole,
+  onOpenDrawer,
   onForwardSuccess,
   onForwardError,
 }: {
   task: TaskResponse;
   currentUserId: string;
   userRole: string;
+  onOpenDrawer?: (task: TaskResponse) => void;
   onForwardSuccess: () => void;
   onForwardError: (msg: string) => void;
 }) {
@@ -491,7 +696,28 @@ function TaskCard({
             <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 border border-slate-200/60">
               {task.completedSteps}/{task.totalSteps} steps
             </span>
+            <div className="hidden sm:block w-16 bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                style={{
+                  width: `${
+                    task.totalSteps > 0
+                      ? Math.round((task.completedSteps / task.totalSteps) * 100)
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
             <TaskStatusBadge status={task.status} />
+            <button
+              type="button"
+              onClick={() => onOpenDrawer?.(task)}
+              className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors shadow-2xs"
+              title="Open task detail drawer"
+            >
+              <PanelRightOpen size={13} />
+              <span className="hidden xs:inline">Details</span>
+            </button>
           </div>
         </div>
 

@@ -17,23 +17,48 @@
  * invite-state takes its own label if the two ever need to coexist.
  */
 const VARIANTS = {
-  active: { className: 'bg-active', label: 'Active' },
-  in_progress: { className: 'bg-active', label: 'In Progress' },
-  completed: { className: 'bg-done', label: 'Completed' },
-  pending: { className: 'bg-amber', label: 'Pending' },
-  scheduled: { className: 'bg-[#579bfc]', label: 'Scheduled' },
-  inactive: { className: 'bg-[#C4C7D0]', label: 'Deactivated' },
+  active: {
+    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200/70',
+    dot: 'bg-emerald-500',
+    label: 'Active',
+  },
+  in_progress: {
+    className: 'bg-blue-50 text-blue-700 border border-blue-200/70',
+    dot: 'bg-blue-500 animate-pulse',
+    label: 'In Progress',
+  },
+  completed: {
+    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200/70',
+    dot: 'bg-emerald-500',
+    label: 'Completed',
+  },
+  pending: {
+    className: 'bg-amber-50 text-amber-700 border border-amber-200/70',
+    dot: 'bg-amber-500',
+    label: 'Pending',
+  },
+  scheduled: {
+    className: 'bg-violet-50 text-violet-700 border border-violet-200/70',
+    dot: 'bg-violet-500',
+    label: 'Scheduled',
+  },
+  inactive: {
+    className: 'bg-slate-100 text-slate-600 border border-slate-200/70',
+    dot: 'bg-slate-400',
+    label: 'Deactivated',
+  },
 } as const;
 
 export type ChipStatus = keyof typeof VARIANTS;
 
 export function StatusChip({ status, label }: { status: ChipStatus; label?: string }) {
-  const variant = VARIANTS[status];
+  const variant = VARIANTS[status] ?? VARIANTS.active;
   return (
     <span
-      className={`inline-block rounded-md px-2.5 py-1 text-[11px] font-semibold text-white ${variant.className}`}
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${variant.className}`}
     >
-      {label ?? variant.label}
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${variant.dot}`} />
+      <span>{label ?? variant.label}</span>
     </span>
   );
 }
