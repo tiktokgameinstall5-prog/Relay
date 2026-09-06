@@ -44,17 +44,20 @@ const EXPECTED: Record<UserRole, { label: string; path: string }[]> = {
     { label: 'All tasks', path: '/tasks' },
     { label: 'Reports', path: '/reports' },
     { label: 'Audit Logs', path: '/audit-logs' },
+    { label: 'Profile', path: '/profile' },
   ],
   manager: [
     { label: 'My team', path: '/team' },
     { label: 'Task board', path: '/tasks' },
     { label: 'Rankings', path: '/rankings' },
     { label: 'Reports', path: '/reports' },
+    { label: 'Profile', path: '/profile' },
   ],
   member: [
     { label: 'Task board', path: '/tasks' },
     { label: 'Rankings', path: '/rankings' },
     { label: 'Reports', path: '/reports' },
+    { label: 'Profile', path: '/profile' },
   ],
 };
 

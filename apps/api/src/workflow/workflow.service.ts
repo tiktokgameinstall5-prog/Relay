@@ -230,6 +230,10 @@ export class WorkflowService {
       );
     }
 
+    const scheduledDate = this.parseAndValidateScheduledFor(dto.scheduledFor);
+    const isScheduled = scheduledDate !== null && scheduledDate.getTime() > Date.now();
+    const taskStatus: TaskStatus = isScheduled ? 'scheduled' : 'in_progress';
+
     return await this.db.tx(async (c) => {
       const now = new Date();
       const taskId = randomUUID();
@@ -276,8 +280,8 @@ export class WorkflowService {
 
         await c.query(
           `INSERT INTO task (
-             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'in_progress', $9, $9)`,
+             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, scheduled_for, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
           [
             taskId,
             actor.orgId,
@@ -287,12 +291,15 @@ export class WorkflowService {
             dto.type,
             dto.description ?? null,
             actor.userId,
+            taskStatus,
+            scheduledDate,
             now,
           ],
         );
 
         for (let i = 0; i < memberIds.length; i++) {
           const isFirst = i === 0;
+          const stepStatus: TaskStepStatus = !isScheduled && isFirst ? 'active' : 'pending';
           await c.query(
             `INSERT INTO task_step (
                id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
@@ -304,11 +311,36 @@ export class WorkflowService {
               taskId,
               memberIds[i],
               i + 1,
-              isFirst ? 'active' : 'pending',
-              isFirst ? now : null,
+              stepStatus,
+              !isScheduled && isFirst ? now : null,
               now,
             ],
           );
+        }
+
+        if (!isScheduled) {
+          const notifs: CreateNotificationInput[] = [];
+          notifs.push({
+            orgId: actor.orgId,
+            userId: team.manager_id,
+            managerId: team.manager_id,
+            type: 'task_assigned',
+            title: `Task assigned: ${dto.name}`,
+            body: `Owner assigned task "${dto.name}" to your team.`,
+            data: { taskId },
+          });
+          if (memberIds.length > 0 && memberIds[0] !== team.manager_id) {
+            notifs.push({
+              orgId: actor.orgId,
+              userId: memberIds[0],
+              managerId: team.manager_id,
+              type: 'step_activated',
+              title: `Task assigned: ${dto.name}`,
+              body: `Step 1 is now with you. Please begin working on ${dto.name}.`,
+              data: { taskId },
+            });
+          }
+          await this.notificationService.createNotifications(c, notifs);
         }
 
         await this.writeAuditLog(c, actor, 'task.created', taskId, {
@@ -318,6 +350,7 @@ export class WorkflowService {
           teamId: team.id,
           managerId: team.manager_id,
           totalSteps: memberIds.length,
+          scheduledFor: scheduledDate ? scheduledDate.toISOString() : null,
         });
 
         return await this.fetchTaskById(c, taskId);
@@ -335,8 +368,8 @@ export class WorkflowService {
 
         await c.query(
           `INSERT INTO task (
-             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
-           ) VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, 'in_progress', $8, $8)`,
+             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, scheduled_for, created_at, updated_at
+           ) VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, $8, $9, $10, $10)`,
           [
             taskId,
             actor.orgId,
@@ -345,23 +378,42 @@ export class WorkflowService {
             dto.type,
             dto.description ?? null,
             actor.userId,
+            taskStatus,
+            scheduledDate,
             now,
           ],
         );
 
+        const stepStatus: TaskStepStatus = !isScheduled ? 'active' : 'pending';
         await c.query(
           `INSERT INTO task_step (
              id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, 1, 'active', $6, $6, $6)`,
+           ) VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $8)`,
           [
             randomUUID(),
             actor.orgId,
             dto.targetManagerId,
             taskId,
             dto.targetManagerId,
+            stepStatus,
+            !isScheduled ? now : null,
             now,
           ],
         );
+
+        if (!isScheduled) {
+          await this.notificationService.createNotifications(c, [
+            {
+              orgId: actor.orgId,
+              userId: dto.targetManagerId,
+              managerId: dto.targetManagerId,
+              type: 'step_activated',
+              title: `Task assigned: ${dto.name}`,
+              body: `Owner assigned task "${dto.name}" to you. Please begin working on it.`,
+              data: { taskId },
+            },
+          ]);
+        }
 
         await this.writeAuditLog(c, actor, 'task.created', taskId, {
           name: dto.name,
@@ -369,6 +421,7 @@ export class WorkflowService {
           targetType: 'manager',
           targetManagerId: dto.targetManagerId,
           totalSteps: 1,
+          scheduledFor: scheduledDate ? scheduledDate.toISOString() : null,
         });
 
         return await this.fetchTaskById(c, taskId);
@@ -390,8 +443,8 @@ export class WorkflowService {
 
         await c.query(
           `INSERT INTO task (
-             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'in_progress', $9, $9)`,
+             id, org_id, manager_id, team_id, name, type, description, created_by_user_id, status, scheduled_for, created_at, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $11)`,
           [
             taskId,
             actor.orgId,
@@ -401,23 +454,42 @@ export class WorkflowService {
             dto.type,
             dto.description ?? null,
             actor.userId,
+            taskStatus,
+            scheduledDate,
             now,
           ],
         );
 
+        const stepStatus: TaskStepStatus = !isScheduled ? 'active' : 'pending';
         await c.query(
           `INSERT INTO task_step (
              id, org_id, manager_id, task_id, assigned_user_id, step_order, status, started_at, created_at, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, 1, 'active', $6, $6, $6)`,
+           ) VALUES ($1, $2, $3, $4, $5, 1, $6, $7, $8, $8)`,
           [
             randomUUID(),
             actor.orgId,
             member.manager_id,
             taskId,
             member.id,
+            stepStatus,
+            !isScheduled ? now : null,
             now,
           ],
         );
+
+        if (!isScheduled) {
+          await this.notificationService.createNotifications(c, [
+            {
+              orgId: actor.orgId,
+              userId: member.id,
+              managerId: member.manager_id,
+              type: 'step_activated',
+              title: `Task assigned: ${dto.name}`,
+              body: `Owner assigned task "${dto.name}" to you. Please begin working on it.`,
+              data: { taskId },
+            },
+          ]);
+        }
 
         await this.writeAuditLog(c, actor, 'task.created', taskId, {
           name: dto.name,
@@ -427,6 +499,7 @@ export class WorkflowService {
           managerId: member.manager_id,
           teamId: member.team_id,
           totalSteps: 1,
+          scheduledFor: scheduledDate ? scheduledDate.toISOString() : null,
         });
 
         return await this.fetchTaskById(c, taskId);
@@ -709,12 +782,30 @@ export class WorkflowService {
    */
   async listTasks(): Promise<TaskResponseDto[]> {
     return await this.db.tx(async (c) => {
+      // 1. Eagerly activate any due scheduled tasks across this tenant
+      await c.query(
+        `UPDATE task
+            SET status = 'in_progress', updated_at = NOW()
+          WHERE status = 'scheduled' AND scheduled_for <= NOW()`,
+      );
+      await c.query(
+        `UPDATE task_step
+            SET status = 'active', started_at = NOW(), updated_at = NOW()
+          WHERE id IN (
+            SELECT s.id FROM task_step s
+            JOIN task t ON t.id = s.task_id
+            WHERE t.status = 'in_progress' AND s.step_order = 1 AND s.status = 'pending'
+          )`,
+      );
+
+      // 2. Fetch tasks. Owner sees scheduled tasks; team members and managers only see active/completed tasks.
       const tasksRes = await c.query<TaskDbRow>(
         `SELECT t.id, t.org_id, t.manager_id, t.team_id, t.name, t.type, t.description,
-                t.created_by_user_id, u.name AS created_by_name, t.status, t.scheduled_for,
+                t.created_by_user_id, COALESCE(u.name, 'Owner') AS created_by_name, t.status, t.scheduled_for,
                 t.created_at, t.updated_at
            FROM task t
-           JOIN "user" u ON u.id = t.created_by_user_id
+           LEFT JOIN "user" u ON u.id = t.created_by_user_id
+          WHERE (app_current_role() = 'owner' OR t.status != 'scheduled')
           ORDER BY t.created_at DESC`,
       );
 
@@ -723,11 +814,11 @@ export class WorkflowService {
       }
 
       const stepsRes = await c.query<StepDbRow>(
-        `SELECT s.id, s.task_id, s.assigned_user_id, u.name AS assigned_user_name,
+        `SELECT s.id, s.task_id, s.assigned_user_id, COALESCE(u.name, 'Unassigned') AS assigned_user_name,
                 u.email AS assigned_user_email, u.role_title,
                 s.step_order, s.status, s.started_at, s.completed_at
            FROM task_step s
-           JOIN "user" u ON u.id = s.assigned_user_id
+           LEFT JOIN "user" u ON u.id = s.assigned_user_id
           WHERE s.task_id = ANY($1::uuid[])
           ORDER BY s.task_id, s.step_order ASC`,
         [tasksRes.rows.map((t) => t.id)],
@@ -758,11 +849,12 @@ export class WorkflowService {
   private async fetchTaskById(c: PoolClient, taskId: string): Promise<TaskResponseDto> {
     const taskRes = await c.query<TaskDbRow>(
       `SELECT t.id, t.org_id, t.manager_id, t.team_id, t.name, t.type, t.description,
-              t.created_by_user_id, u.name AS created_by_name, t.status, t.scheduled_for,
+              t.created_by_user_id, COALESCE(u.name, 'Owner') AS created_by_name, t.status, t.scheduled_for,
               t.created_at, t.updated_at
          FROM task t
-         JOIN "user" u ON u.id = t.created_by_user_id
-        WHERE t.id = $1`,
+         LEFT JOIN "user" u ON u.id = t.created_by_user_id
+        WHERE t.id = $1
+          AND (app_current_role() = 'owner' OR t.status != 'scheduled')`,
       [taskId],
     );
     if (taskRes.rows.length === 0) {
@@ -770,11 +862,11 @@ export class WorkflowService {
     }
 
     const stepsRes = await c.query<StepDbRow>(
-      `SELECT s.id, s.task_id, s.assigned_user_id, u.name AS assigned_user_name,
+      `SELECT s.id, s.task_id, s.assigned_user_id, COALESCE(u.name, 'Unassigned') AS assigned_user_name,
               u.email AS assigned_user_email, u.role_title,
               s.step_order, s.status, s.started_at, s.completed_at
          FROM task_step s
-         JOIN "user" u ON u.id = s.assigned_user_id
+         LEFT JOIN "user" u ON u.id = s.assigned_user_id
         WHERE s.task_id = $1
         ORDER BY s.step_order ASC`,
       [taskId],

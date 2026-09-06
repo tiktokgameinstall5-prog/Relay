@@ -16,7 +16,7 @@
  * must become the scrollable tab bar below. The check is "resize to ~390px and
  * confirm every nav tab is still reachable".
  */
-import { NavLink, Outlet } from 'react-router-dom';
+import { Link, NavLink, Outlet } from 'react-router-dom';
 import {
   Building2,
   ClipboardList,
@@ -28,6 +28,7 @@ import {
   MessageSquare,
   ShieldAlert,
   Trophy,
+  User,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -52,17 +53,20 @@ const NAV: Record<UserRole, NavItem[]> = {
     { to: '/tasks', label: 'All tasks', icon: ClipboardList },
     { to: '/reports', label: 'Reports', icon: MessageSquare },
     { to: '/audit-logs', label: 'Audit Logs', icon: ShieldAlert },
+    { to: '/profile', label: 'Profile', icon: User },
   ],
   manager: [
     { to: '/team', label: 'My team', icon: Users },
     { to: '/tasks', label: 'Task board', icon: ClipboardList },
     { to: '/rankings', label: 'Rankings', icon: Trophy },
     { to: '/reports', label: 'Reports', icon: MessageSquare },
+    { to: '/profile', label: 'Profile', icon: User },
   ],
   member: [
     { to: '/tasks', label: 'Task board', icon: ClipboardList },
     { to: '/rankings', label: 'Rankings', icon: Trophy },
     { to: '/reports', label: 'Reports', icon: MessageSquare },
+    { to: '/profile', label: 'Profile', icon: User },
   ],
 };
 
@@ -124,11 +128,17 @@ export function AppShell() {
         )}
 
         <div className="flex items-center gap-2 border-t border-[#2A2D3A] px-3 py-3">
-          <Avatar name={user.name} size={28} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[13px] font-medium text-white">{user.name}</div>
-            <div className="truncate text-[11px] text-[#7B8098] capitalize">{user.role}</div>
-          </div>
+          <Link
+            to="/profile"
+            title="View profile"
+            className="flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1 transition-colors hover:bg-white/5"
+          >
+            <Avatar name={user.name} size={28} />
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-medium text-white">{user.name}</div>
+              <div className="truncate text-[11px] text-[#7B8098] capitalize">{user.role}</div>
+            </div>
+          </Link>
           <NotificationBell />
           <button
             type="button"
@@ -150,7 +160,9 @@ export function AppShell() {
           </div>
           <span className="font-display flex-1 text-[15px] font-bold">Relay</span>
           <NotificationBell />
-          <Avatar name={user.name} size={26} />
+          <Link to="/profile" title="View profile" className="flex items-center">
+            <Avatar name={user.name} size={26} />
+          </Link>
           <button
             type="button"
             onClick={signOut}

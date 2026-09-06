@@ -27,6 +27,7 @@ import { Rankings } from './screens/Rankings';
 import { Reports } from './screens/Reports';
 import { AuditLogs } from './screens/AuditLogs';
 import { ForgotPasscode } from './screens/ForgotPasscode';
+import { Profile } from './screens/Profile';
 import type { UserRole } from './api/types';
 
 /** The dashboard a signed-in user lands on, by role. Every target is a route
@@ -120,6 +121,7 @@ export function App() {
             />
             <Route path="/rankings" element={<Rankings />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/profile" element={<Profile />} />
             <Route
               path="/audit-logs"
               element={
