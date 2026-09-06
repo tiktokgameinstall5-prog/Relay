@@ -254,13 +254,12 @@ function TaskStatusBadge({ status }: { status: TaskStatus }) {
 
 function TaskDescriptionBox({ description }: { description: string }) {
   const [copied, setCopied] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
 
-  // Only offer collapse if text is truly colossal (e.g. over 1500 characters or over 20 lines)
-  const isColossal = description.length > 1500 || description.split('\n').length > 20;
   const wordCount = description.trim().split(/\s+/).filter(Boolean).length;
 
-  async function handleCopy() {
+  async function handleCopy(e: React.MouseEvent) {
+    e.stopPropagation();
     try {
       await navigator.clipboard.writeText(description);
       setCopied(true);
@@ -282,23 +281,49 @@ function TaskDescriptionBox({ description }: { description: string }) {
   }
 
   return (
-    <div className="mt-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 p-4 transition-colors hover:bg-slate-50/90">
-      <div className="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-200/60">
-        <div className="flex items-center gap-2">
-          <FileText size={14} className="text-slate-400" />
-          <span className="text-xs font-semibold text-slate-700">
-            Description & Instructions
+    <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 transition-colors hover:bg-slate-50/90">
+      <div className="flex items-center justify-between gap-3">
+        {/* Toggle Dropdown Header / Trigger */}
+        <button
+          type="button"
+          onClick={() => setIsOpen((prev) => !prev)}
+          className="group flex min-w-0 flex-1 items-center gap-2 text-left"
+          title={isOpen ? 'Click to collapse description' : 'Click to drop down full description'}
+        >
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white border border-slate-200/70 text-slate-500 shadow-2xs group-hover:border-blue-300 group-hover:text-blue-600 transition-colors">
+            <ChevronDown
+              size={14}
+              className={`transition-transform duration-200 ${isOpen ? 'rotate-180 text-blue-600' : ''}`}
+            />
           </span>
+
+          <span className="shrink-0 text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+            <FileText size={13} className="text-slate-400" />
+            Description
+          </span>
+
           {wordCount > 0 && (
-            <span className="rounded-full bg-slate-200/70 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+            <span className="shrink-0 rounded-full bg-slate-200/70 px-2 py-0.5 text-[10px] font-medium text-slate-600">
               {wordCount} {wordCount === 1 ? 'word' : 'words'}
             </span>
           )}
-        </div>
+
+          {!isOpen && (
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
+              {description}
+            </span>
+          )}
+
+          <span className="shrink-0 text-[11px] font-medium text-blue-600 hover:text-blue-700 group-hover:underline">
+            {isOpen ? 'Show less' : 'See more'}
+          </span>
+        </button>
+
+        {/* Copy Button */}
         <button
           type="button"
           onClick={handleCopy}
-          className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 active:scale-95"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 active:scale-95"
           title="Copy full description to clipboard"
         >
           {copied ? (
@@ -315,26 +340,14 @@ function TaskDescriptionBox({ description }: { description: string }) {
         </button>
       </div>
 
-      <div className="mt-2.5">
-        <div
-          className={`select-text font-sans text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words ${
-            !isExpanded && isColossal ? 'max-h-72 overflow-hidden' : ''
-          }`}
-        >
-          {description}
-        </div>
-        {isColossal && (
-          <div className="mt-2.5 pt-1.5 border-t border-slate-200/50 flex justify-end">
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              className="text-xs font-medium text-blue-600 hover:text-blue-700 hover:underline"
-            >
-              {isExpanded ? 'Show less' : `Show full text (${description.length.toLocaleString()} characters)`}
-            </button>
+      {/* Expanded Description Dropdown Content */}
+      {isOpen && (
+        <div className="mt-2.5 border-t border-slate-200/70 pt-2.5">
+          <div className="select-text font-sans text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
+            {description}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }
