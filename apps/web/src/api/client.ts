@@ -75,11 +75,16 @@ interface NestErrorBody {
   error?: string;
 }
 
-function messageFor(status: number, body: NestErrorBody | null): {
+function messageFor(status: number, body: NestErrorBody | null, path?: string): {
   message: string;
   fields: string[];
 } {
-  if (status === 401) return { message: CREDENTIALS_REJECTED, fields: [] };
+  if (status === 401) {
+    if (path && (path.includes('/login') || path.includes('/first-login'))) {
+      return { message: CREDENTIALS_REJECTED, fields: [] };
+    }
+    return { message: 'Your session has expired. Please log in again.', fields: [] };
+  }
 
   const raw = body?.message;
 
@@ -134,6 +139,23 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     throw new ApiError(0, 'Could not reach the API. Is it running on port 3000?');
   }
 
+  // If 401 on an authenticated route and not the refresh endpoint itself, attempt silent refresh once
+  if (response.status === 401 && authenticated && path !== '/auth/session/refresh') {
+    try {
+      const refreshed = await refreshSession();
+      setToken(refreshed.accessToken);
+      headers['Authorization'] = `Bearer ${refreshed.accessToken}`;
+      response = await fetch(`/api${path}`, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: isFormData ? body : JSON.stringify(body) } : {}),
+      });
+    } catch {
+      clearToken();
+      throw new ApiError(401, 'Your session has expired. Please log in again.');
+    }
+  }
+
   // 204 has no body to parse. No endpoint returns one today, but a JSON.parse
   // on an empty string is an ugly way to find that out later.
   if (response.status === 204) return undefined as T;
@@ -152,6 +174,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     const { message, fields } = messageFor(
       response.status,
       (parsed as NestErrorBody | null) ?? null,
+      path,
     );
     throw new ApiError(response.status, message, fields);
   }
