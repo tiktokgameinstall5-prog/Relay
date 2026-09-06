@@ -42,14 +42,13 @@ export async function createNestApp(expressInstance?: express.Express): Promise<
   return app;
 }
 
-let cachedServer: express.Express | null = null;
+let cachedServer: any = null;
 
-export async function getVercelHandler(): Promise<express.Express> {
+export async function getVercelHandler(): Promise<any> {
   if (!cachedServer) {
-    const server = express();
-    const app = await createNestApp(server);
+    const app = await createNestApp();
     await app.init();
-    cachedServer = server;
+    cachedServer = app.getHttpAdapter().getInstance();
   }
   return cachedServer;
 }
