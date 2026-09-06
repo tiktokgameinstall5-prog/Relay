@@ -15,6 +15,37 @@ import { join } from 'node:path';
 
 const MIGRATIONS_DIR = join(__dirname, '..', 'migrations');
 
+export function normalizeConnectionString(raw: string): string {
+  const trimmed = raw.trim();
+  const lastAtIndex = trimmed.lastIndexOf('@');
+  if (lastAtIndex === -1) return trimmed;
+
+  const credsPart = trimmed.slice(0, lastAtIndex);
+  const hostPart = trimmed.slice(lastAtIndex + 1);
+
+  const protoIndex = credsPart.indexOf('://');
+  if (protoIndex === -1) return trimmed;
+
+  const proto = credsPart.slice(0, protoIndex + 3);
+  const userPass = credsPart.slice(protoIndex + 3);
+
+  const firstColonIndex = userPass.indexOf(':');
+  if (firstColonIndex === -1) return trimmed;
+
+  const username = userPass.slice(0, firstColonIndex);
+  let password = userPass.slice(firstColonIndex + 1);
+
+  if (password.startsWith('[') && password.endsWith(']')) {
+    password = password.slice(1, -1);
+  }
+
+  // Preserve already URL-encoded characters or encode special characters
+  const decodedPass = decodeURIComponent(password);
+  const encodedPass = encodeURIComponent(decodedPass);
+
+  return `${proto}${encodeURIComponent(username)}:${encodedPass}@${hostPart}`;
+}
+
 function getArgConnectionString(): string {
   const url = process.argv[2] || process.env.SUPABASE_DATABASE_URL;
   if (!url) {
@@ -22,7 +53,7 @@ function getArgConnectionString(): string {
     console.error('Usage: npm run db:setup:supabase "<your-supabase-connection-string>"\n');
     process.exit(1);
   }
-  return url.trim();
+  return normalizeConnectionString(url);
 }
 
 async function main() {

@@ -32,13 +32,15 @@ function requireEnv(name: string): string {
 
 async function main() {
   const connStr = requireEnv('MIGRATION_DATABASE_URL');
-  const isSsl =
+  const isCloud =
     connStr.includes('sslmode=') ||
     connStr.includes('supabase.co') ||
+    connStr.includes('pooler.supabase.com') ||
     (process.env.NODE_ENV === 'production' && !connStr.includes('localhost'));
+  const cleanUrl = isCloud ? connStr.replace(/[?&]sslmode=[^&]+/g, '') : connStr;
   const client = new Client({
-    connectionString: connStr,
-    ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+    connectionString: cleanUrl,
+    ...(isCloud ? { ssl: { rejectUnauthorized: false } } : {}),
   });
   await client.connect();
 

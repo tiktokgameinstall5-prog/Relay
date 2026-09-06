@@ -32,14 +32,16 @@ export class DbService implements OnModuleInit, OnModuleDestroy {
 
   constructor(@Inject(ConfigService) config: ConfigService) {
     const env = appEnv(config);
-    const isSsl =
+    const isCloud =
       env.DATABASE_URL.includes('sslmode=') ||
       env.DATABASE_URL.includes('supabase.co') ||
+      env.DATABASE_URL.includes('pooler.supabase.com') ||
       (env.NODE_ENV === 'production' && !env.DATABASE_URL.includes('localhost'));
+    const cleanUrl = isCloud ? env.DATABASE_URL.replace(/[?&]sslmode=[^&]+/g, '') : env.DATABASE_URL;
     this.pool = new Pool({
-      connectionString: env.DATABASE_URL,
+      connectionString: cleanUrl,
       max: 10,
-      ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+      ...(isCloud ? { ssl: { rejectUnauthorized: false } } : {}),
     });
   }
 

@@ -37,13 +37,15 @@ function requireEnv(name: string): string {
 }
 
 async function withClient<T>(url: string, fn: (c: Client) => Promise<T>): Promise<T> {
-  const isSsl =
+  const isCloud =
     url.includes('sslmode=') ||
     url.includes('supabase.co') ||
+    url.includes('pooler.supabase.com') ||
     (process.env.NODE_ENV === 'production' && !url.includes('localhost'));
+  const cleanUrl = isCloud ? url.replace(/[?&]sslmode=[^&]+/g, '') : url;
   const client = new Client({
-    connectionString: url,
-    ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {}),
+    connectionString: cleanUrl,
+    ...(isCloud ? { ssl: { rejectUnauthorized: false } } : {}),
   });
   await client.connect();
   try {
