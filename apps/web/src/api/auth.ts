@@ -82,6 +82,10 @@ export function createTeam(input: { name: string }): Promise<TeamCreated> {
 export function createMember(input: {
   name: string;
   email: string;
+  managerId?: string;
+  teamId?: string;
+  roleTitle?: string;
+  workflowStep?: number;
 }): Promise<MemberProvisioned> {
   return request<MemberProvisioned>('/auth/members', { method: 'POST', body: input });
 }

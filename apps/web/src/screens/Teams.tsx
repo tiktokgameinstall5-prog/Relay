@@ -7,31 +7,70 @@
  * would see only their own team — but the screen is framed as the owner's
  * org-wide view and is owner-only at the route.
  */
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Crown } from 'lucide-react';
+import { Crown, UserPlus } from 'lucide-react';
 import { listTeams } from '../api/auth';
-import type { TeamListRow } from '../api/types';
+import type { MemberProvisioned, TeamListRow } from '../api/types';
 import { useAsync } from '../lib/useAsync';
 import { AsyncView } from '../components/AsyncView';
 import { Avatar } from '../components/Avatar';
 import { StatusChip } from '../components/StatusChip';
+import { Button } from '../components/Button';
+import { InviteResult } from '../components/InviteResult';
+import { AddMemberModal } from '../components/AddMemberModal';
 import { fmtDateTime } from '../lib/format';
 
 export function Teams() {
-  const { state } = useAsync(() => listTeams());
+  const [showAdd, setShowAdd] = useState(false);
+  const [lastAdded, setLastAdded] = useState<MemberProvisioned | null>(null);
+  const { state, reload } = useAsync(() => listTeams());
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="font-display text-xl font-semibold">All teams</h1>
-      <p className="text-muted mt-0.5 text-sm">
-        Every manager’s team across the organization — your full-visibility view.
-      </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display text-xl font-semibold">All teams</h1>
+          <p className="text-muted mt-0.5 text-sm">
+            Every manager’s team across the organization — your full-visibility view.
+          </p>
+        </div>
+        {state.status === 'success' && state.data.length > 0 && (
+          <Button onClick={() => setShowAdd(true)} className="w-full sm:w-auto justify-center">
+            <UserPlus size={15} className="-ml-1" />
+            Add member to team
+          </Button>
+        )}
+      </div>
+
+      {lastAdded !== null && (
+        <div className="mt-5">
+          <InviteResult
+            name={lastAdded.name}
+            inviteEmailSent={lastAdded.inviteEmailSent}
+            passcodeExpiresAt={lastAdded.passcodeExpiresAt}
+            action="added"
+          />
+        </div>
+      )}
 
       <div className="mt-5">
         <AsyncView state={state}>
           {(teams) => (teams.length === 0 ? <EmptyState /> : <TeamList teams={teams} />)}
         </AsyncView>
       </div>
+
+      {showAdd && state.status === 'success' && state.data.length > 0 && (
+        <AddMemberModal
+          onClose={() => setShowAdd(false)}
+          teams={state.data}
+          onCreated={(member) => {
+            setLastAdded(member);
+            setShowAdd(false);
+            reload();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -441,8 +441,6 @@ export class AuthService {
     passcodeExpiresAt: Date;
     inviteEmailSent: boolean;
   }> {
-    const targetManagerId = this.resolveTargetManagerId(actor, dto.managerId);
-
     const userId = randomUUID();
     const passcode = generatePasscode();
     const passcodeHash = await hash(passcode, this.bcryptCost);
@@ -452,32 +450,66 @@ export class AuthService {
     let teamId: string;
     try {
       ({ organizationName, teamId } = await this.db.tx(async (c) => {
-        // Same RLS-scoped guard as createTeam: the manager must be real, active,
-        // and inside the caller's slice. This is the check that keeps an Owner
-        // from attaching a member to a manager in another organization — without
-        // it, the member's org_id (the Owner's) and manager_id (a foreign
-        // manager) would both satisfy the FK and the owner RLS branch, creating a
-        // cross-org member.
-        const mgr = await c.query(
-          `SELECT id FROM "user" WHERE id = $1 AND role = 'manager' AND status = 'active'`,
-          [targetManagerId],
-        );
-        if (mgr.rowCount === 0) {
-          throw new BadRequestException('No such manager in your organization.');
-        }
+        let targetManagerId: string;
+        let resolvedTeamId: string;
 
-        // A member must join their manager's active team. §1 scopes a member "to
-        // that manager's team at creation", so there must be one.
-        const team = await c.query<{ id: string }>(
-          `SELECT id FROM team WHERE manager_id = $1 AND status = 'active'`,
-          [targetManagerId],
-        );
-        if (team.rowCount === 0) {
-          throw new ConflictException(
-            'That manager has no active team yet — create a team first.',
+        if (actor.role === 'manager') {
+          if (dto.managerId && dto.managerId !== actor.userId) {
+            throw new BadRequestException(
+              'A manager can only create teams and members on their own team.',
+            );
+          }
+          targetManagerId = actor.userId;
+          const team = await c.query<{ id: string }>(
+            `SELECT id FROM team WHERE manager_id = $1 AND status = 'active'`,
+            [targetManagerId],
           );
+          if (team.rowCount === 0) {
+            throw new ConflictException(
+              'That manager has no active team yet — create a team first.',
+            );
+          }
+          resolvedTeamId = team.rows[0].id;
+        } else {
+          // Owner provisioning member for a manager's team
+          if (dto.teamId) {
+            const teamRes = await c.query<{ id: string; manager_id: string }>(
+              `SELECT id, manager_id FROM team WHERE id = $1 AND org_id = $2 AND status = 'active'`,
+              [dto.teamId, actor.orgId],
+            );
+            if (teamRes.rowCount === 0) {
+              throw new BadRequestException('Target team not found in your organization.');
+            }
+            resolvedTeamId = teamRes.rows[0].id;
+            targetManagerId = teamRes.rows[0].manager_id;
+            if (dto.managerId && dto.managerId !== targetManagerId) {
+              throw new BadRequestException('Specified manager does not own the target team.');
+            }
+          } else if (dto.managerId) {
+            targetManagerId = dto.managerId;
+            const mgr = await c.query(
+              `SELECT id FROM "user" WHERE id = $1 AND org_id = $2 AND role = 'manager' AND status = 'active'`,
+              [targetManagerId, actor.orgId],
+            );
+            if (mgr.rowCount === 0) {
+              throw new BadRequestException('No such manager in your organization.');
+            }
+            const team = await c.query<{ id: string }>(
+              `SELECT id FROM team WHERE manager_id = $1 AND status = 'active'`,
+              [targetManagerId],
+            );
+            if (team.rowCount === 0) {
+              throw new ConflictException(
+                'That manager has no active team yet — create a team first.',
+              );
+            }
+            resolvedTeamId = team.rows[0].id;
+          } else {
+            throw new BadRequestException(
+              "Either teamId or managerId is required: specify which manager's team this is for.",
+            );
+          }
         }
-        const resolvedTeamId = team.rows[0].id;
 
         await c.query(
           `INSERT INTO "user"

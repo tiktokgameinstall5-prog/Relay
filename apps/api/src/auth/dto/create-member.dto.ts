@@ -52,13 +52,22 @@ export class CreateMemberDto {
   @ApiPropertyOptional({
     format: 'uuid',
     description:
-      "The manager whose team this member joins. Required for an Owner caller; " +
+      "The manager whose team this member joins. An Owner may provide managerId or teamId; " +
       'ignored for a Manager caller (their own id is always used, and passing ' +
       "another manager's id is rejected).",
   })
   @IsOptional()
   @IsUUID()
   managerId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      "The specific team this member joins. An Owner may provide teamId as an alternative to managerId.",
+  })
+  @IsOptional()
+  @IsUUID()
+  teamId?: string;
 
   @ApiPropertyOptional({
     maxLength: 120,

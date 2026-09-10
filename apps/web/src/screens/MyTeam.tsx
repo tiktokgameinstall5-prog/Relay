@@ -28,6 +28,7 @@ import { Button } from '../components/Button';
 import { Field } from '../components/Field';
 import { Alert } from '../components/Alert';
 import { ModalShell } from '../components/ModalShell';
+import { AddMemberModal } from '../components/AddMemberModal';
 import { fmtDateTime } from '../lib/format';
 
 export function MyTeam() {
@@ -107,9 +108,14 @@ export function MyTeam() {
         </AsyncView>
       </div>
 
-      {showAdd && (
+      {showAdd && state.status === 'success' && state.data.team && (
         <AddMemberModal
           onClose={() => setShowAdd(false)}
+          preselectedTeam={{
+            id: state.data.team.id,
+            managerId: state.data.team.managerId,
+            name: state.data.team.name,
+          }}
           onCreated={(member) => {
             setLastAdded(member);
             setShowAdd(false);
@@ -224,70 +230,5 @@ function TeamBody({
         <MemberRoster members={members} onDeactivate={onDeactivate} />
       )}
     </>
-  );
-}
-
-function AddMemberModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: (member: MemberProvisioned) => void;
-}) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      onCreated(await createMember({ name, email }));
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 409) {
-        // Per-(org_id, email) uniqueness — the same address in another org is
-        // legitimate, so the wording names the scope.
-        setError('That email already has an account in this organization.');
-      } else if (caught instanceof ApiError) {
-        setError(caught.message);
-      } else {
-        setError('Something went wrong. Try again.');
-      }
-      setBusy(false);
-    }
-  }
-
-  return (
-    <ModalShell title="Add a member" onClose={onClose}>
-      <form onSubmit={onSubmit} className="space-y-3">
-        {error !== null && <Alert>{error}</Alert>}
-
-        <Field
-          label="Full name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Sam Member"
-          minLength={2}
-          maxLength={120}
-          required
-        />
-        <Field
-          label="Work email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="sam@company.com"
-          maxLength={254}
-          hint="The invite goes here. No password is set — they choose one when they activate."
-          required
-        />
-
-        <Button type="submit" full disabled={busy} className="mt-2">
-          {busy ? 'Adding…' : 'Add member & send invite'}
-        </Button>
-      </form>
-    </ModalShell>
   );
 }
