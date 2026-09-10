@@ -8,7 +8,7 @@ import type { ButtonHTMLAttributes, ReactNode } from 'react';
 const VARIANTS = {
   primary: 'bg-signal text-white hover:bg-[#2C46D8] disabled:bg-[#A9B5F8]',
   secondary:
-    'bg-white text-ink border border-hairline hover:bg-cool-slate disabled:text-[#9AA1AC]',
+    'bg-white dark:bg-[#1e2333] text-ink dark:text-slate-100 border border-hairline dark:border-[#2e354b] hover:bg-cool-slate dark:hover:bg-[#252b3d] disabled:text-[#9AA1AC] dark:disabled:text-slate-500',
 } as const;
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {

@@ -1800,13 +1800,13 @@ function CreateTaskModal({
         </div>
 
         {/* Scheduling Toggle & Picker */}
-        <div className="rounded-lg border border-hairline bg-slate-50/70 p-3">
+        <div className="rounded-lg border border-hairline dark:border-[#222738] bg-slate-50/70 dark:bg-[#0e1118] p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Clock size={16} className={isScheduled ? 'text-active' : 'text-muted'} />
+              <Clock size={16} className={isScheduled ? 'text-active' : 'text-muted dark:text-slate-400'} />
               <div>
-                <div className="text-xs font-semibold text-ink">Schedule for later</div>
-                <div className="text-[11px] text-muted">
+                <div className="text-xs font-semibold text-ink dark:text-slate-200">Schedule for later</div>
+                <div className="text-[11px] text-muted dark:text-slate-400">
                   Task starts automatically at the designated date & time.
                 </div>
               </div>
@@ -1832,13 +1832,13 @@ function CreateTaskModal({
                 }}
                 className="peer sr-only"
               />
-              <div className="peer h-5 w-9 rounded-full bg-slate-200 after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 after:bg-white after:transition-all after:content-[''] peer-checked:bg-active peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none" />
+              <div className="peer h-5 w-9 rounded-full bg-slate-200 dark:bg-slate-700 after:absolute after:top-[2px] after:left-[2px] after:h-4 after:w-4 after:rounded-full after:border after:border-gray-300 dark:after:border-slate-600 after:bg-white after:transition-all after:content-[''] peer-checked:bg-active peer-checked:after:translate-x-full peer-checked:after:border-white peer-focus:outline-none" />
             </label>
           </div>
 
           {isScheduled && (
-            <div className="mt-3 border-t border-hairline pt-3">
-              <label htmlFor="scheduled-datetime-input" className="mb-1 block text-xs font-medium text-muted">
+            <div className="mt-3 border-t border-hairline dark:border-[#222738] pt-3">
+              <label htmlFor="scheduled-datetime-input" className="mb-1 block text-xs font-medium text-muted dark:text-slate-400">
                 Activation Date & Time
               </label>
               <input
@@ -1856,10 +1856,10 @@ function CreateTaskModal({
                   .toISOString()
                   .slice(0, 16)}
                 onChange={(e) => setScheduledFor(e.target.value)}
-                className="w-full rounded-lg border border-hairline bg-white px-3 py-2 text-sm text-ink outline-none focus:border-active focus:ring-1 focus:ring-active"
+                className="w-full rounded-lg border border-hairline dark:border-[#222738] bg-white dark:bg-[#0e1118] px-3 py-2 text-sm text-ink dark:text-slate-100 outline-none focus:border-active focus:ring-1 focus:ring-active"
                 required={isScheduled}
               />
-              <p className="mt-1 text-[11px] text-faint">
+              <p className="mt-1 text-[11px] text-faint dark:text-slate-400">
                 Task status will remain <strong>Scheduled</strong> and step 1 will stay <strong>Pending</strong> until this time.
               </p>
             </div>
@@ -1868,11 +1868,11 @@ function CreateTaskModal({
 
         {/* Relay Sequence Picker (for Manager or Owner -> Team mode) */}
         {(!isOwner || targetMode === 'team') && (
-          <div className="border-t border-hairline pt-3">
-            <label className="text-muted block text-xs font-semibold uppercase tracking-wider">
+          <div className="border-t border-hairline dark:border-[#222738] pt-3">
+            <label className="text-muted dark:text-slate-400 block text-xs font-semibold uppercase tracking-wider">
               Relay sequence (ordered steps)
             </label>
-            <p className="text-faint text-xs">
+            <p className="text-faint dark:text-slate-400 text-xs">
               {isOwner
                 ? 'Optional: pick specific members in order. If empty, defaults to all team members.'
                 : 'Add team members in the order work should flow. Step 1 starts immediately.'}
