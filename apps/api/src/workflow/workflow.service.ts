@@ -945,13 +945,10 @@ export class WorkflowService {
             OR (
               app_current_role() = 'member'
               AND t.status != 'scheduled'
-              AND (
-                (t.team_id IS NOT NULL AND t.team_id = (SELECT team_id FROM "user" WHERE id = app_current_user_id()))
-                OR EXISTS (
-                  SELECT 1 FROM task_step ts
-                  WHERE ts.task_id = t.id
-                    AND ts.assigned_user_id = app_current_user_id()
-                )
+              AND EXISTS (
+                SELECT 1 FROM task_step ts
+                WHERE ts.task_id = t.id
+                  AND ts.assigned_user_id = app_current_user_id()
               )
             )
           )
@@ -1009,13 +1006,10 @@ export class WorkflowService {
             OR (
               app_current_role() = 'member'
               AND t.status != 'scheduled'
-              AND (
-                (t.team_id IS NOT NULL AND t.team_id = (SELECT team_id FROM "user" WHERE id = app_current_user_id()))
-                OR EXISTS (
-                  SELECT 1 FROM task_step ts
-                  WHERE ts.task_id = t.id
-                    AND ts.assigned_user_id = app_current_user_id()
-                )
+              AND EXISTS (
+                SELECT 1 FROM task_step ts
+                WHERE ts.task_id = t.id
+                  AND ts.assigned_user_id = app_current_user_id()
               )
             )
           )`,

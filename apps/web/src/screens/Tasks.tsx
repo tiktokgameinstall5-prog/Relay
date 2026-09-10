@@ -141,12 +141,28 @@ export function Tasks() {
   const myActiveTasks =
     tasks?.filter((t) => t.status === 'in_progress' && t.currentAssignee?.id === user?.id) ?? [];
 
-  const inProgressCount = tasks?.filter((t) => t.status === 'in_progress').length ?? 0;
-  const scheduledCount = tasks?.filter((t) => t.status === 'scheduled').length ?? 0;
-  const completedCount = tasks?.filter((t) => t.status === 'completed').length ?? 0;
-  const allCount = tasks?.length ?? 0;
+  // Members only see tasks that are assigned to them in the relay sequence
+  const isTaskVisibleForUser = useCallback(
+    (t: TaskResponse) => {
+      if (user?.role === 'member') {
+        return (
+          t.currentAssignee?.id === user.id ||
+          t.steps?.some((s) => s.assignedUserId === user.id)
+        );
+      }
+      return true;
+    },
+    [user?.role, user?.id],
+  );
 
-  const filteredTasks = tasks?.filter((t) => {
+  const visibleTasks = tasks?.filter(isTaskVisibleForUser) ?? [];
+
+  const inProgressCount = visibleTasks.filter((t) => t.status === 'in_progress').length;
+  const scheduledCount = visibleTasks.filter((t) => t.status === 'scheduled').length;
+  const completedCount = visibleTasks.filter((t) => t.status === 'completed').length;
+  const allCount = visibleTasks.length;
+
+  const filteredTasks = visibleTasks.filter((t) => {
     if (statusFilter !== 'all' && t.status !== statusFilter) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -158,7 +174,7 @@ export function Tasks() {
     return true;
   });
 
-  const activeDrawerTask = tasks?.find((t) => t.id === selectedDrawerTaskId) ?? null;
+  const activeDrawerTask = visibleTasks.find((t) => t.id === selectedDrawerTaskId) ?? null;
 
   return (
     <div className="mx-auto max-w-4xl">
