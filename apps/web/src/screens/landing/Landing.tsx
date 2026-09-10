@@ -153,10 +153,10 @@ export function Landing() {
   return (
     <MarketingLayout>
       {/* ---- Hero Section ---- */}
-      <section className="relative overflow-hidden pt-12 pb-16 sm:pt-20 sm:pb-24">
+      <section className="relative overflow-hidden pt-10 pb-14 sm:pt-20 sm:pb-24">
         {/* Subtle radial background glow */}
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="h-[480px] w-[600px] rounded-full bg-blue-100/60 blur-3xl opacity-50" />
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+          <div className="h-[280px] w-[280px] sm:h-[480px] sm:w-[600px] rounded-full bg-blue-100/60 blur-3xl opacity-50" />
         </div>
 
         <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
@@ -167,75 +167,83 @@ export function Landing() {
                 <span>Task-Relay Workflow Platform</span>
               </div>
 
-              <h1 className="font-display mt-5 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl leading-[1.1]">
-                Work doesn&rsquo;t sit. <br />
+              <h1 className="font-display mt-5 text-3xl xs:text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-950 leading-[1.15] sm:leading-[1.1]">
+                Work doesn&rsquo;t sit. <br className="hidden xs:inline" />
                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                   It moves.
                 </span>
               </h1>
 
-              <p className="mt-4 sm:mt-5 text-base sm:text-lg leading-relaxed text-slate-600 max-w-xl mx-auto lg:mx-0">
+              <p className="mt-4 sm:mt-5 text-sm sm:text-base md:text-lg leading-relaxed text-slate-600 max-w-xl mx-auto lg:mx-0">
                 Relay hands each task down an ordered chain of teammates — one owner at a time,
                 visible to the whole team, from assignment to completion.
               </p>
 
-              <div className="mt-7 sm:mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-3.5">
+              <div className="mt-6 sm:mt-8 flex flex-col xs:flex-row items-stretch xs:items-center justify-center lg:justify-start gap-3 sm:gap-3.5">
                 <Link
                   to="/signup"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 hover:shadow-lg active:scale-98"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 sm:px-6 py-3.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 hover:shadow-lg active:scale-98"
                 >
                   Start free workspace <ArrowRight size={16} />
                 </Link>
                 <a
                   href="#simulator"
-                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-2xs transition-all hover:bg-slate-50 hover:border-slate-300 active:scale-98"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 sm:px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-2xs transition-all hover:bg-slate-50 hover:border-slate-300 active:scale-98"
                 >
                   <Zap size={15} className="text-blue-600" />
                   Try live simulator
                 </a>
               </div>
 
-              <div className="mt-5 sm:mt-6 flex items-center justify-center lg:justify-start gap-2 text-xs text-slate-500">
-                <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
-                <span>Free to start · Instant workspace setup · No credit card required</span>
+              <div className="mt-5 sm:mt-6 flex flex-wrap items-center justify-center lg:justify-start gap-x-2.5 gap-y-1.5 text-xs text-slate-500">
+                <span className="inline-flex items-center gap-1.5 font-medium text-slate-600">
+                  <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
+                  Free to start
+                </span>
+                <span className="hidden xs:inline text-slate-300">·</span>
+                <span className="font-medium text-slate-600">Instant setup</span>
+                <span className="hidden xs:inline text-slate-300">·</span>
+                <span className="font-medium text-slate-600">No credit card required</span>
               </div>
             </div>
 
             {/* Hero Interactive Simulator Card */}
-            <div id="simulator" className="lg:col-span-6">
-              <div className="relative rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xl shadow-slate-200/50 backdrop-blur-sm">
-                <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
-                      <Video size={18} />
+            <div id="simulator" className="lg:col-span-6 w-full min-w-0">
+              <div className="relative rounded-2xl border border-slate-200/90 bg-white p-3.5 sm:p-6 shadow-xl shadow-slate-200/50 backdrop-blur-sm overflow-hidden">
+                <div className="flex items-center justify-between gap-2.5 pb-3.5 sm:pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                    <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
+                      <Video size={17} />
                     </div>
-                    <div>
-                      <div className="text-sm font-bold text-slate-900">
+                    <div className="min-w-0">
+                      <div className="text-xs sm:text-sm font-bold text-slate-900 truncate">
                         Q3 Product Launch Video
                       </div>
-                      <div className="text-xs text-slate-500">
-                        Owner assigned · Relay of 4 steps
+                      <div className="text-[11px] sm:text-xs text-slate-500 truncate">
+                        Owner assigned · 4 relay steps
                       </div>
                     </div>
                   </div>
-                  <StatusChip status={isFinished ? 'completed' : 'in_progress'} />
+                  <div className="shrink-0">
+                    <StatusChip status={isFinished ? 'completed' : 'in_progress'} />
+                  </div>
                 </div>
 
                 {/* Relay Chain Visualization */}
-                <div className="mt-4 rounded-xl border border-slate-200/60 bg-slate-50/70 p-4">
-                  <div className="mb-2 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                <div className="mt-3.5 sm:mt-4 rounded-xl border border-slate-200/60 bg-slate-50/70 p-3 sm:p-4 overflow-hidden">
+                  <div className="mb-2.5 flex flex-col xs:flex-row xs:items-center justify-between gap-1.5 text-xs">
+                    <span className="font-semibold text-slate-700 flex items-center gap-1.5 shrink-0">
                       <Zap size={13} className="text-blue-500" />
                       Live relay sequence
                     </span>
                     {isFinished ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200/70">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] sm:text-xs font-semibold text-emerald-700 border border-emerald-200/70 self-start xs:self-auto">
                         <CheckCircle2 size={12} /> All steps completed
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200/70">
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                        Currently with: {demoSteps[activeIndex]?.name || 'Next member'}
+                      <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2 py-0.5 text-[11px] sm:text-xs font-semibold text-blue-700 border border-blue-200/70 truncate self-start xs:self-auto max-w-full">
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500 animate-pulse" />
+                        <span className="truncate">Currently with: {demoSteps[activeIndex]?.name || 'Next member'}</span>
                       </span>
                     )}
                   </div>
@@ -243,35 +251,35 @@ export function Landing() {
                 </div>
 
                 {/* Interactive Simulation Controls */}
-                <div className="mt-4 flex flex-col sm:flex-row items-center justify-between gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-xs">
-                  <div className="text-slate-700">
+                <div className="mt-3.5 sm:mt-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-xs">
+                  <div className="text-slate-700 text-center sm:text-left leading-relaxed">
                     <span className="font-semibold text-blue-800">Interactive Demo: </span>
                     {isFinished
                       ? 'The relay has completed from start to finish!'
-                      : `Step ${activeIndex + 1} is active. Click to simulate the next hand-off.`}
+                      : `Step ${activeIndex + 1} is active. Tap below to simulate the next hand-off.`}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-center shrink-0">
                     {isFinished ? (
                       <button
                         type="button"
                         onClick={handleResetDemo}
-                        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 sm:py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors active:scale-95 cursor-pointer"
                       >
-                        <RotateCcw size={12} /> Reset demo
+                        <RotateCcw size={13} /> Reset demo
                       </button>
                     ) : (
                       <button
                         type="button"
                         onClick={handlePassBaton}
-                        className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition-colors active:scale-95"
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 sm:py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition-colors active:scale-95 cursor-pointer"
                       >
-                        <FastForward size={12} /> Pass baton →
+                        <FastForward size={13} /> Pass baton →
                       </button>
                     )}
                   </div>
                 </div>
 
-                <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400">
+                <div className="mt-2.5 sm:mt-3 flex items-center justify-between text-[10.5px] sm:text-[11px] text-slate-400 px-0.5">
                   <span>Interactive product preview</span>
                   <span>Real-time hand-off automation</span>
                 </div>

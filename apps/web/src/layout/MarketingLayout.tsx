@@ -16,7 +16,7 @@ export function MarketingLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
       <header className="border-hairline sticky top-0 z-10 border-b bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-2 px-6 py-3.5">
+        <div className="mx-auto flex max-w-6xl items-center gap-2 px-4 sm:px-6 py-3 sm:py-3.5">
           <div className="bg-signal flex h-8 w-8 items-center justify-center rounded-lg">
             <Layers size={17} color="white" />
           </div>
@@ -25,13 +25,13 @@ export function MarketingLayout({ children }: { children: ReactNode }) {
           <nav className="flex items-center gap-1.5 sm:gap-2">
             <Link
               to="/login"
-              className="text-ink hover:bg-cool-slate rounded-lg px-3 py-2 text-sm font-semibold sm:px-4"
+              className="text-ink hover:bg-cool-slate rounded-lg px-2.5 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold"
             >
               Log in
             </Link>
             <Link
               to="/signup"
-              className="bg-signal hover:bg-signal-hover rounded-lg px-3 py-2 text-sm font-semibold text-white sm:px-4"
+              className="bg-signal hover:bg-signal-hover rounded-lg px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm font-semibold text-white shadow-2xs"
             >
               Start free
             </Link>
@@ -39,10 +39,10 @@ export function MarketingLayout({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      <main className="flex-1">{children}</main>
+      <main className="flex-1 w-full overflow-x-hidden">{children}</main>
 
       <footer className="border-hairline border-t">
-        <div className="text-muted mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-6 py-6 text-xs sm:flex-row">
+        <div className="text-muted mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 sm:px-6 py-6 text-xs sm:flex-row">
           <div className="flex items-center gap-1.5">
             <span className="font-display text-ink font-bold">Relay</span>
             <span>· Team workspace &amp; task-relay platform</span>

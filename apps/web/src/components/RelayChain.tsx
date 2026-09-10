@@ -33,15 +33,15 @@ export function RelayChain({
   return (
     <div>
       {label && <div className="text-muted mb-1 text-xs font-medium">{label}</div>}
-      <div className="flex items-center gap-1 overflow-x-auto py-2">
+      <div className="flex items-center justify-between sm:justify-start gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar scroll-smooth touch-pan-x py-1.5 px-0.5">
         {steps.map((step, i) => {
           const isActive = step.state === 'active';
           const firstName = step.name.split(' ')[0] ?? step.name;
           return (
             <Fragment key={step.id}>
-              <div className="flex min-w-[68px] flex-col items-center gap-1">
+              <div className="flex min-w-[58px] xs:min-w-[64px] sm:min-w-[68px] flex-col items-center gap-1 shrink-0">
                 <div className="relative">
-                  <Avatar name={step.name} size={34} ring={isActive} />
+                  <Avatar name={step.name} size={30} ring={isActive} />
                   {step.state === 'completed' && (
                     <div className="absolute -right-0.5 -bottom-0.5 rounded-full bg-white">
                       {/* #00C875 / #E7FBF1 mirror the done / done-soft tokens —
@@ -54,18 +54,18 @@ export function RelayChain({
                   )}
                 </div>
                 <div
-                  className={`text-center text-[11px] leading-tight font-medium ${
+                  className={`text-center text-[10.5px] sm:text-[11px] leading-tight font-medium truncate max-w-[58px] xs:max-w-none ${
                     isActive ? 'text-active' : 'text-muted'
                   }`}
                 >
                   {firstName}
                 </div>
-                <div className="text-faint font-mono text-[10px]">
+                <div className="text-faint font-mono text-[9.5px] sm:text-[10px]">
                   {durationFromSeconds(step.durationSeconds)}
                 </div>
               </div>
               {i < steps.length - 1 && (
-                <ArrowRight size={13} className="text-gray mb-5 shrink-0" />
+                <ArrowRight size={12} className="text-gray mb-4 sm:mb-5 shrink-0" />
               )}
             </Fragment>
           );

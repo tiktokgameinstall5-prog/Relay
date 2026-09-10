@@ -9,6 +9,7 @@
    object at the top of workspace-relay-prototype.jsx so utilities and inline
    token styles agree. */
 @theme {
+  --breakpoint-xs: 440px;
   --color-sidebar-bg: #181a24;
   --color-sidebar-bg-active: #262a3a;
   --color-sidebar-text: #9297aa;
