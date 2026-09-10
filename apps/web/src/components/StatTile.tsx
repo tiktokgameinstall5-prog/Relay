@@ -23,7 +23,7 @@ export function StatTile({
   };
 
   return (
-    <div className="group rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs hover:border-slate-300 hover:shadow-xs transition-all">
+    <div className="group rounded-2xl border border-slate-200/80 bg-white p-4 sm:p-5 shadow-2xs hover:border-slate-300 hover:shadow-xs transition-all">
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-slate-500">{label}</span>
         {icon && (

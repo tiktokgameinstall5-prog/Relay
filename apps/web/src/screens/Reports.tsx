@@ -47,7 +47,7 @@ export function Reports() {
         {canSubmit && (
           <Button
             onClick={() => setShowSubmitModal(true)}
-            className="flex items-center gap-1.5 self-start"
+            className="flex items-center justify-center gap-1.5 w-full sm:w-auto"
           >
             <Plus size={16} />
             Write Completion Report

@@ -84,7 +84,7 @@ function OverviewBody({
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <StatTile label="Teams" value={teams.length} icon={<Building2 size={13} />} />
         <StatTile label="Managers" value={managers.length} icon={<Crown size={13} />} />
         <StatTile label="Members" value={membersCount} icon={<Users size={13} />} />
@@ -92,13 +92,13 @@ function OverviewBody({
       </div>
 
       {analytics && (
-        <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <div className="border-hairline rounded-xl border bg-white p-5">
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <div className="border-hairline rounded-xl border bg-white p-4 sm:p-5">
             <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
               <CheckCircle2 size={13} className="text-[#00C875]" />
               <span>Completion rate</span>
             </div>
-            <div className="font-display mt-2 text-3xl font-bold tabular-nums text-[#00C875]">
+            <div className="font-display mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[#00C875]">
               {analytics.tasks.completionRate}%
             </div>
           </div>
@@ -109,22 +109,22 @@ function OverviewBody({
             icon={<Activity size={13} />}
           />
 
-          <div className="border-hairline rounded-xl border bg-white p-5">
+          <div className="border-hairline rounded-xl border bg-white p-4 sm:p-5">
             <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
               <Trophy size={13} className="text-[#0073EA]" />
               <span>Avg member score</span>
             </div>
-            <div className="font-display mt-2 text-3xl font-bold tabular-nums text-[#0073EA]">
+            <div className="font-display mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[#0073EA]">
               {analytics.rankings.averageRanking ? Math.round(analytics.rankings.averageRanking) : '—'}
             </div>
           </div>
 
-          <div className="border-hairline rounded-xl border bg-white p-5">
+          <div className="border-hairline rounded-xl border bg-white p-4 sm:p-5">
             <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
               <Crown size={13} className="text-[#FDAB3D]" />
               <span>Top performer</span>
             </div>
-            <div className="font-display mt-2 truncate text-2xl font-bold text-[#FDAB3D]">
+            <div className="font-display mt-2 truncate text-xl sm:text-2xl font-bold text-[#FDAB3D]">
               {analytics.rankings.topPerformer ? analytics.rankings.topPerformer.name.split(' ')[0] : '—'}
             </div>
           </div>

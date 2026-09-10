@@ -165,9 +165,9 @@ export function TaskDetailDrawer({
       />
 
       {/* Slide-over panel */}
-      <div className="relative z-10 flex h-full w-full max-w-xl flex-col bg-white shadow-2xl border-l border-slate-200 animate-in slide-in-from-right duration-250">
+      <div className="relative z-10 flex h-full w-full sm:max-w-xl lg:max-w-2xl flex-col bg-white shadow-2xl border-l border-slate-200 animate-in slide-in-from-right duration-250">
         {/* Top Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 bg-slate-50/50">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-3.5 sm:py-4 bg-slate-50/50">
           <div className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white border border-slate-200/80 shadow-2xs">
               <TaskTypeIcon type={task.type} />
@@ -193,11 +193,11 @@ export function TaskDetailDrawer({
         </div>
 
         {/* Scrollable Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-6">
           {/* Title & Status Bar */}
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-display text-xl font-bold tracking-tight text-slate-900">
+              <h2 className="font-display text-lg sm:text-xl font-bold tracking-tight text-slate-900">
                 {task.name}
               </h2>
               {task.status === 'completed' && (
@@ -238,7 +238,7 @@ export function TaskDetailDrawer({
           </div>
 
           {/* Key Properties Grid */}
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 text-xs">
             <div className="rounded-xl border border-slate-200/80 p-3 bg-white shadow-2xs">
               <div className="flex items-center justify-between">
                 <span className="text-slate-400 font-medium block">Current Assignee</span>
@@ -414,9 +414,9 @@ export function TaskDetailDrawer({
 
         {/* Action Footer */}
         {isMyActiveStep ? (
-          <div className="border-t border-slate-200 bg-slate-50 p-4 flex items-center justify-between gap-3">
+          <div className="border-t border-slate-200 bg-slate-50 p-3.5 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
             <div className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
-              <Sparkles size={14} className="text-blue-600" />
+              <Sparkles size={14} className="text-blue-600 shrink-0" />
               <span>You currently hold this active step.</span>
             </div>
 
@@ -424,7 +424,7 @@ export function TaskDetailDrawer({
               variant="primary"
               onClick={handleForward}
               disabled={forwarding}
-              className="bg-blue-600 hover:bg-blue-700 font-semibold text-xs shadow-xs"
+              className="w-full sm:w-auto justify-center bg-blue-600 hover:bg-blue-700 font-semibold text-xs shadow-xs"
             >
               <Send size={13} className="-ml-0.5" />
               {forwarding
@@ -435,7 +435,7 @@ export function TaskDetailDrawer({
             </Button>
           </div>
         ) : task.status === 'in_progress' && task.currentAssignee ? (
-          <div className="border-t border-slate-200 bg-slate-50/80 p-3.5 px-4 flex items-center justify-between gap-3">
+          <div className="border-t border-slate-200 bg-slate-50/80 p-3.5 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 sm:gap-3">
             <div className="text-xs text-slate-600 flex items-center gap-1.5 min-w-0">
               <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping shrink-0" />
               <span className="truncate">
@@ -445,7 +445,7 @@ export function TaskDetailDrawer({
             <button
               type="button"
               onClick={handlePingAssignee}
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all shadow-2xs shrink-0 ${
+              className={`w-full sm:w-auto justify-center inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all shadow-2xs shrink-0 ${
                 pinged
                   ? 'bg-amber-100 text-amber-900 border-amber-300 scale-95'
                   : 'bg-white text-slate-700 border-slate-200 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800'

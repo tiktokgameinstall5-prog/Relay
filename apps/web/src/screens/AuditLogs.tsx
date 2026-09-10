@@ -196,7 +196,7 @@ export function AuditLogs() {
 
       {/* Log Table / List */}
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto no-scrollbar touch-pan-x">
           <table className="w-full text-left text-xs text-gray-600">
             <thead className="border-b border-gray-200 bg-gray-50 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
               <tr>
@@ -248,7 +248,6 @@ export function AuditLogs() {
                     <td className="whitespace-nowrap px-4 py-3">
                       {log.entityType ? (
                         <div className="flex items-center gap-1 text-gray-700">
-                          <Layers className="h-3 w-3 text-gray-400" />
                           <span className="font-medium capitalize">{log.entityType}</span>
                           {log.entityId && (
                             <span className="font-mono text-[10px] text-gray-400">
@@ -277,7 +276,7 @@ export function AuditLogs() {
         </div>
 
         {/* Pagination Footer */}
-        <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50/50 px-4 py-3 text-xs text-gray-600">
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-gray-200 bg-gray-50/50 px-4 py-3 text-xs text-gray-600">
           <div>
             Showing <span className="font-medium text-gray-900">{data.items.length}</span> of{' '}
             <span className="font-medium text-gray-900">{data.total}</span> total events

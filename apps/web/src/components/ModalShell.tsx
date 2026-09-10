@@ -32,7 +32,7 @@ export function ModalShell({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs"
       style={{ background: 'rgba(22,26,34,0.5)' }}
       onMouseDown={(event) => {
         // Only a click that both starts and ends on the backdrop closes it —
@@ -46,14 +46,14 @@ export function ModalShell({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`max-h-[85vh] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-xl outline-none ${
+        className={`max-h-[90dvh] sm:max-h-[85vh] w-full overflow-y-auto rounded-2xl bg-white p-4 sm:p-6 shadow-2xl outline-none ${
           wide ? 'max-w-lg' : 'max-w-sm'
         }`}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="font-display text-lg font-semibold">{title}</h3>
-          <button type="button" onClick={onClose} aria-label="Close">
-            <X size={18} className="text-[#9AA1AC]" />
+        <div className="mb-3.5 sm:mb-4 flex items-center justify-between">
+          <h3 className="font-display text-base sm:text-lg font-semibold">{title}</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+            <X size={18} />
           </button>
         </div>
         {children}

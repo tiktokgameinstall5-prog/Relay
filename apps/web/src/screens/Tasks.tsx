@@ -170,7 +170,7 @@ export function Tasks() {
               <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" /> Live Relay
             </span>
           </div>
-          <p className="text-muted mt-1 text-sm">
+          <p className="text-muted mt-1 text-xs sm:text-sm">
             Ordered workflows moving sequentially through the team relay chain.
           </p>
         </div>
@@ -179,7 +179,7 @@ export function Tasks() {
           <Button
             variant="primary"
             onClick={() => setShowCreateModal(true)}
-            className="rounded-xl shadow-xs hover:shadow-sm font-medium transition-all"
+            className="w-full sm:w-auto justify-center rounded-xl shadow-xs hover:shadow-sm font-medium transition-all"
           >
             <Plus size={16} className="-ml-1" />
             Assign task
@@ -231,7 +231,7 @@ export function Tasks() {
           <button
             type="button"
             onClick={() => setSelectedDrawerTaskId(myActiveTasks[0].id)}
-            className="shrink-0 flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors"
+            className="w-full sm:w-auto shrink-0 flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-2xs hover:bg-blue-700 transition-colors"
           >
             <span>Open & Forward</span>
             <ChevronRight size={13} />
@@ -241,9 +241,9 @@ export function Tasks() {
 
       {/* Search & Status Filters Toolbar (ClickUp & Asana style) */}
       {tasks && tasks.length > 0 && (
-        <div className="mt-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+        <div className="mt-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
           {/* Status Filter Buttons */}
-          <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
+          <div className="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth touch-pan-x pb-1 md:pb-0 shrink-0">
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
@@ -322,7 +322,7 @@ export function Tasks() {
           </div>
 
           {/* Search Input */}
-          <div className="relative flex-1 sm:max-w-xs">
+          <div className="relative flex-1 md:max-w-xs">
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-2.5 text-slate-400">
               <Search size={14} />
             </div>
@@ -751,11 +751,11 @@ function TaskCard({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 border border-slate-200/60">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 border border-slate-200/60 shrink-0">
               {task.completedSteps}/{task.totalSteps} steps
             </span>
-            <div className="hidden sm:block w-16 bg-slate-200/80 rounded-full h-1.5 overflow-hidden">
+            <div className="hidden xs:block sm:block w-12 sm:w-16 bg-slate-200/80 rounded-full h-1.5 overflow-hidden shrink-0">
               <div
                 className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                 style={{
@@ -771,11 +771,11 @@ function TaskCard({
             <button
               type="button"
               onClick={() => onOpenDrawer?.(task)}
-              className="hidden sm:inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors shadow-2xs"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors shadow-2xs shrink-0"
               title="Open task detail drawer"
             >
               <PanelRightOpen size={13} />
-              <span className="hidden xs:inline">Details</span>
+              <span>Details</span>
             </button>
           </div>
         </div>
@@ -823,9 +823,9 @@ function TaskCard({
         </div>
 
         {/* Action Bar / Forward & Hand-off Prompts */}
-        <div className="mt-4 flex flex-col items-start justify-between gap-3 border-t border-hairline pt-3 text-xs sm:flex-row sm:items-center">
+        <div className="mt-4 flex flex-col items-stretch justify-between gap-3 border-t border-hairline pt-3 text-xs sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
-            <div className="text-faint">Created {fmtDateTime(task.createdAt)}</div>
+            <div className="text-faint text-[11px] sm:text-xs">Created {fmtDateTime(task.createdAt)}</div>
             {task.status === 'completed' && (
               <Link
                 to="/reports"
@@ -838,13 +838,13 @@ function TaskCard({
           </div>
 
           {isMyActiveStep ? (
-            <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+            <div className="flex w-full flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 sm:w-auto">
               {(task.teamId || userRole === 'manager') && (
                 <Button
                   variant="secondary"
                   onClick={handleToggleHandoff}
                   disabled={forwarding}
-                  className="text-xs"
+                  className="w-full sm:w-auto justify-center text-xs"
                 >
                   <ArrowRightLeft size={13} className="-ml-0.5" />
                   {userRole === 'manager' ? 'Assign relay sequence to team' : 'Hand off to peer'}
@@ -856,7 +856,7 @@ function TaskCard({
                 variant="primary"
                 onClick={() => handleForward()}
                 disabled={forwarding}
-                className="bg-active hover:bg-blue-600 font-semibold"
+                className="w-full sm:w-auto justify-center bg-active hover:bg-blue-600 font-semibold"
               >
                 <Send size={14} className="-ml-0.5" />
                 {forwarding
@@ -867,11 +867,11 @@ function TaskCard({
               </Button>
             </div>
           ) : task.status === 'in_progress' && task.currentAssignee ? (
-            <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+            <div className="flex w-full items-stretch sm:items-center justify-end gap-2 sm:w-auto">
               <button
                 type="button"
                 onClick={handlePingAssignee}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 active:scale-95"
+                className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 active:scale-95"
                 title={`Send a polite baton reminder to ${task.currentAssignee.name}`}
               >
                 <Bell size={13} className={pinged ? 'text-amber-600 animate-bounce' : 'text-amber-500'} />
@@ -997,14 +997,14 @@ function TaskCard({
                 </div>
 
                 {/* Submit Sequence Button */}
-                <div className="flex items-center justify-end gap-2 border-t border-blue-100 pt-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 border-t border-blue-100 pt-3">
                   <Button
                     variant="secondary"
                     onClick={() => {
                       setShowHandoffPicker(false);
                       setSelectedMemberIds([]);
                     }}
-                    className="text-xs"
+                    className="w-full sm:w-auto justify-center text-xs"
                   >
                     Cancel
                   </Button>
@@ -1012,7 +1012,7 @@ function TaskCard({
                     variant="primary"
                     disabled={forwarding || selectedMemberIds.length === 0}
                     onClick={handleAssignSequence}
-                    className="bg-active hover:bg-blue-600 font-semibold text-xs"
+                    className="w-full sm:w-auto justify-center bg-active hover:bg-blue-600 font-semibold text-xs"
                   >
                     <Send size={13} className="-ml-0.5" />
                     {forwarding

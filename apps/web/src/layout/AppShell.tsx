@@ -82,9 +82,9 @@ export function AppShell() {
   return (
     <div className="bg-[#f8fafc] text-ink flex min-h-screen">
       {/* ---- Dark workspace sidebar — md and up (Linear / Hive inspired) ---- */}
-      <aside className="bg-[#0f1117] border-r border-slate-800/80 hidden w-64 shrink-0 md:flex md:flex-col select-none">
+      <aside className="bg-[#0f1117] border-r border-slate-800/80 hidden shrink-0 md:flex md:flex-col md:w-56 lg:w-64 select-none">
         {/* Brand header */}
-        <div className="flex items-center gap-2.5 border-b border-white/[0.08] px-5 py-4">
+        <div className="flex items-center gap-2.5 border-b border-white/[0.08] px-4 lg:px-5 py-4">
           <div className="bg-gradient-to-tr from-blue-600 to-indigo-500 flex h-7 w-7 items-center justify-center rounded-lg shadow-sm shadow-blue-500/20">
             <Layers size={15} color="white" />
           </div>
@@ -95,7 +95,7 @@ export function AppShell() {
         </div>
 
         {/* Organization switcher pill */}
-        <div className="px-3 pt-3.5 pb-1">
+        <div className="px-2.5 lg:px-3 pt-3.5 pb-1">
           <div className="flex items-center justify-between rounded-xl bg-white/[0.04] border border-white/[0.06] p-2.5 text-left">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-500/20 text-blue-400 font-bold text-xs border border-blue-500/30">
@@ -116,7 +116,7 @@ export function AppShell() {
         <nav
           aria-label="Primary"
           data-testid="sidebar-nav"
-          className="flex-1 space-y-1 px-3 py-3"
+          className="flex-1 space-y-1 px-2.5 lg:px-3 py-3"
         >
           {nav.map((item) => (
             <NavLink
@@ -138,7 +138,7 @@ export function AppShell() {
 
         {/* Owner full visibility badge */}
         {user.role === 'owner' && (
-          <div className="m-3 rounded-xl bg-gradient-to-br from-indigo-950/40 to-slate-900 border border-indigo-500/20 p-3 shadow-2xs">
+          <div className="m-2.5 lg:m-3 rounded-xl bg-gradient-to-br from-indigo-950/40 to-slate-900 border border-indigo-500/20 p-3 shadow-2xs">
             <div className="flex items-center gap-1.5 text-[11px] font-semibold text-indigo-300">
               <Eye size={12} className="text-indigo-400" /> Full visibility
             </div>
@@ -149,7 +149,7 @@ export function AppShell() {
         )}
 
         {/* User profile card & sign out */}
-        <div className="flex items-center gap-2 border-t border-white/[0.08] p-3">
+        <div className="flex items-center gap-2 border-t border-white/[0.08] p-2.5 lg:p-3">
           <Link
             to="/profile"
             title="View profile"
@@ -175,8 +175,8 @@ export function AppShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        {/* ---- Global Workspace Top Bar (Desktop) ---- */}
-        <header className="hidden md:flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-6 backdrop-blur-md">
+        {/* ---- Global Workspace Top Bar (Desktop & Tablet) ---- */}
+        <header className="hidden md:flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 lg:px-6 backdrop-blur-md">
           {/* Breadcrumbs */}
           <div className="flex items-center gap-2 text-xs text-slate-500">
             <span className="font-medium text-slate-400">Relay</span>
@@ -215,7 +215,7 @@ export function AppShell() {
         <nav
           aria-label="Primary"
           data-testid="mobile-nav"
-          className="border-b border-slate-200 flex gap-2 overflow-x-auto bg-white px-4 py-2 md:hidden"
+          className="border-b border-slate-200 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth touch-pan-x bg-white px-4 py-2 md:hidden"
         >
           {nav.map((item) => (
             <NavLink
@@ -232,7 +232,7 @@ export function AppShell() {
           ))}
         </nav>
 
-        <main className="min-w-0 flex-1 p-4 md:p-6">
+        <main className="min-w-0 flex-1 p-3.5 sm:p-5 md:p-6 lg:p-8">
           <Outlet />
         </main>
       </div>

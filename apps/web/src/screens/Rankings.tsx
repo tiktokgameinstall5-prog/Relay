@@ -59,7 +59,7 @@ export function Rankings() {
           <Button
             variant="secondary"
             onClick={() => setMyHistoryOpen(true)}
-            className="flex items-center gap-1.5 self-start"
+            className="flex items-center justify-center gap-1.5 w-full sm:w-auto"
           >
             <History size={15} />
             My Score History

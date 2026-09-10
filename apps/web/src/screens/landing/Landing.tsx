@@ -159,51 +159,51 @@ export function Landing() {
           <div className="h-[480px] w-[600px] rounded-full bg-blue-100/60 blur-3xl opacity-50" />
         </div>
 
-        <div className="relative mx-auto max-w-6xl px-6">
-          <div className="grid items-center gap-12 lg:grid-cols-12">
-            <div className="lg:col-span-6">
+        <div className="relative mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid items-center gap-8 lg:gap-12 lg:grid-cols-12">
+            <div className="lg:col-span-6 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 rounded-full border border-blue-200/80 bg-blue-50/80 px-3.5 py-1 text-xs font-semibold text-blue-700 shadow-2xs">
                 <Sparkles size={13} className="text-blue-600" />
                 <span>Task-Relay Workflow Platform</span>
               </div>
 
-              <h1 className="font-display mt-5 text-4xl font-extrabold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl leading-[1.08]">
+              <h1 className="font-display mt-5 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-5xl lg:text-6xl leading-[1.1]">
                 Work doesn&rsquo;t sit. <br />
                 <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                   It moves.
                 </span>
               </h1>
 
-              <p className="mt-5 text-lg leading-relaxed text-slate-600">
+              <p className="mt-4 sm:mt-5 text-base sm:text-lg leading-relaxed text-slate-600 max-w-xl mx-auto lg:mx-0">
                 Relay hands each task down an ordered chain of teammates — one owner at a time,
                 visible to the whole team, from assignment to completion.
               </p>
 
-              <div className="mt-8 flex flex-wrap items-center gap-3.5">
+              <div className="mt-7 sm:mt-8 flex flex-col sm:flex-row items-stretch sm:items-center justify-center lg:justify-start gap-3 sm:gap-3.5">
                 <Link
                   to="/signup"
-                  className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 hover:shadow-lg active:scale-98"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-6 py-3.5 text-sm font-semibold text-white shadow-md shadow-blue-500/20 transition-all hover:bg-blue-700 hover:shadow-lg active:scale-98"
                 >
                   Start free workspace <ArrowRight size={16} />
                 </Link>
                 <a
                   href="#simulator"
-                  className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-2xs transition-all hover:bg-slate-50 hover:border-slate-300 active:scale-98"
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 py-3.5 text-sm font-semibold text-slate-800 shadow-2xs transition-all hover:bg-slate-50 hover:border-slate-300 active:scale-98"
                 >
                   <Zap size={15} className="text-blue-600" />
                   Try live simulator
                 </a>
               </div>
 
-              <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
-                <ShieldCheck size={14} className="text-emerald-600" />
+              <div className="mt-5 sm:mt-6 flex items-center justify-center lg:justify-start gap-2 text-xs text-slate-500">
+                <ShieldCheck size={14} className="text-emerald-600 shrink-0" />
                 <span>Free to start · Instant workspace setup · No credit card required</span>
               </div>
             </div>
 
             {/* Hero Interactive Simulator Card */}
             <div id="simulator" className="lg:col-span-6">
-              <div className="relative rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xl shadow-slate-200/50 backdrop-blur-sm">
+              <div className="relative rounded-2xl border border-slate-200/90 bg-white p-4 sm:p-6 shadow-xl shadow-slate-200/50 backdrop-blur-sm">
                 <div className="flex items-center justify-between gap-3 pb-4 border-b border-slate-100">
                   <div className="flex items-center gap-3">
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
@@ -282,16 +282,16 @@ export function Landing() {
       </section>
 
       {/* ---- Metrics & Social Proof Bar ---- */}
-      <section className="border-y border-slate-200/80 bg-slate-50/60 py-10">
-        <div className="mx-auto max-w-6xl px-6">
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+      <section className="border-y border-slate-200/80 bg-slate-50/60 py-8 sm:py-10">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
+          <div className="grid grid-cols-2 gap-4 sm:gap-6 md:grid-cols-4">
             {METRICS.map((m) => (
               <div key={m.label} className="text-center sm:text-left">
-                <div className="font-display text-3xl font-extrabold text-blue-600 sm:text-4xl">
+                <div className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold text-blue-600">
                   {m.value}
                 </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">{m.label}</div>
-                <div className="text-xs text-slate-500">{m.desc}</div>
+                <div className="mt-1 text-xs sm:text-sm font-semibold text-slate-900">{m.label}</div>
+                <div className="text-[11px] sm:text-xs text-slate-500">{m.desc}</div>
               </div>
             ))}
           </div>
@@ -299,26 +299,26 @@ export function Landing() {
       </section>
 
       {/* ---- How it Works / Core Differentiators ---- */}
-      <section id="how" className="py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-6">
+      <section id="how" className="py-14 sm:py-20 lg:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="text-center">
             <span className="inline-block rounded-full bg-blue-50 px-3.5 py-1 text-xs font-semibold text-blue-700 border border-blue-200/60">
               The Relay Philosophy
             </span>
-            <h2 className="font-display mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+            <h2 className="font-display mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-slate-950">
               Why sequential relay changes everything
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-slate-600">
+            <p className="mx-auto mt-3 sm:mt-4 max-w-2xl text-sm sm:text-base text-slate-600">
               Traditional project management tools allow tasks to linger in multiple inboxes.
               Relay organizes work into a single moving baton.
             </p>
           </div>
 
-          <div className="mt-16 grid gap-8 md:grid-cols-3">
+          <div className="mt-10 sm:mt-16 grid gap-5 sm:gap-8 md:grid-cols-3">
             {FEATURES.map((feat) => (
               <div
                 key={feat.title}
-                className="group relative rounded-2xl border border-slate-200/90 bg-white p-7 shadow-xs hover:border-blue-300 hover:shadow-md transition-all"
+                className="group relative rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-7 shadow-xs hover:border-blue-300 hover:shadow-md transition-all"
               >
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-xs font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-md border border-blue-100">
@@ -328,11 +328,11 @@ export function Landing() {
                     {feat.highlight}
                   </span>
                 </div>
-                <h3 className="font-display mt-5 text-lg font-bold text-slate-900">
+                <h3 className="font-display mt-5 text-base sm:text-lg font-bold text-slate-900">
                   {feat.title}
                 </h3>
                 <div className="text-xs font-medium text-slate-400 mt-0.5">{feat.subtitle}</div>
-                <p className="mt-3 text-sm leading-relaxed text-slate-600">{feat.body}</p>
+                <p className="mt-3 text-xs sm:text-sm leading-relaxed text-slate-600">{feat.body}</p>
               </div>
             ))}
           </div>
@@ -340,37 +340,37 @@ export function Landing() {
       </section>
 
       {/* ---- Three Roles Architecture ---- */}
-      <section className="border-t border-slate-200/80 bg-slate-50/50 py-20 sm:py-24">
-        <div className="mx-auto max-w-6xl px-6">
+      <section className="border-t border-slate-200/80 bg-slate-50/50 py-14 sm:py-20 lg:py-24">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <div className="text-center">
             <span className="inline-block rounded-full bg-slate-200/70 px-3.5 py-1 text-xs font-semibold text-slate-700">
               Built for Enterprise Security
             </span>
-            <h2 className="font-display mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+            <h2 className="font-display mt-3 text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-slate-950">
               Three clear roles, zero data leak
             </h2>
-            <p className="mx-auto mt-4 max-w-2xl text-base text-slate-600">
+            <p className="mx-auto mt-3 sm:mt-4 max-w-2xl text-sm sm:text-base text-slate-600">
               Multi-tenant database row-level security ensures users only ever access their exact
               slice of the workspace.
             </p>
           </div>
 
-          <div className="mt-14 grid gap-6 md:grid-cols-3">
+          <div className="mt-10 sm:mt-14 grid gap-5 sm:gap-6 md:grid-cols-3">
             {ROLES.map(({ icon: Icon, role, badge, body }) => (
               <div
                 key={role}
-                className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs hover:border-slate-300 hover:shadow-sm transition-all"
+                className="rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6 shadow-xs hover:border-slate-300 hover:shadow-sm transition-all"
               >
                 <div className="flex items-center justify-between">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
-                    <Icon size={20} />
+                  <div className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 shadow-2xs">
+                    <Icon size={18} />
                   </div>
                   <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
                     {badge}
                   </span>
                 </div>
                 <h3 className="font-display mt-4 text-base font-bold text-slate-900">{role}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-slate-600">{body}</p>
+                <p className="mt-2 text-xs sm:text-sm leading-relaxed text-slate-600">{body}</p>
               </div>
             ))}
           </div>
@@ -378,18 +378,18 @@ export function Landing() {
       </section>
 
       {/* ---- Interactive FAQ Accordion ---- */}
-      <section className="py-20 sm:py-24">
-        <div className="mx-auto max-w-4xl px-6">
+      <section className="py-14 sm:py-20 lg:py-24">
+        <div className="mx-auto max-w-4xl px-4 sm:px-6">
           <div className="text-center">
-            <h2 className="font-display text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
+            <h2 className="font-display text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-slate-950">
               Frequently Asked Questions
             </h2>
-            <p className="mt-3 text-base text-slate-600">
+            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-600">
               Everything you need to know about Relay workflows.
             </p>
           </div>
 
-          <div className="mt-12 space-y-3.5">
+          <div className="mt-8 sm:mt-12 space-y-3 sm:space-y-3.5">
             {FAQS.map((faq, idx) => {
               const isOpen = openFaqIndex === idx;
               return (
@@ -400,9 +400,9 @@ export function Landing() {
                   <button
                     type="button"
                     onClick={() => setOpenFaqIndex(isOpen ? null : idx)}
-                    className="flex w-full items-center justify-between gap-4 p-5 text-left"
+                    className="flex w-full items-center justify-between gap-4 p-4 sm:p-5 text-left"
                   >
-                    <span className="text-sm font-semibold text-slate-900">{faq.q}</span>
+                    <span className="text-xs sm:text-sm font-semibold text-slate-900">{faq.q}</span>
                     <ChevronDown
                       size={16}
                       className={`text-slate-400 transition-transform duration-200 shrink-0 ${
@@ -411,7 +411,7 @@ export function Landing() {
                     />
                   </button>
                   {isOpen && (
-                    <div className="px-5 pb-5 text-sm leading-relaxed text-slate-600 border-t border-slate-100 pt-3">
+                    <div className="px-4 sm:px-5 pb-4 sm:pb-5 text-xs sm:text-sm leading-relaxed text-slate-600 border-t border-slate-100 pt-3">
                       {faq.a}
                     </div>
                   )}
@@ -423,20 +423,20 @@ export function Landing() {
       </section>
 
       {/* ---- High-Conversion CTA Banner ---- */}
-      <section className="px-6 pb-20">
-        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-8 py-16 text-center text-white shadow-2xl">
+      <section className="px-4 sm:px-6 pb-14 sm:pb-20">
+        <div className="relative mx-auto max-w-6xl overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-5 sm:px-8 py-10 sm:py-16 text-center text-white shadow-2xl">
           <div className="relative z-10">
-            <h2 className="font-display text-3xl font-extrabold sm:text-4xl">
+            <h2 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold">
               Ready to see work move?
             </h2>
-            <p className="mx-auto mt-4 max-w-xl text-base text-slate-300">
+            <p className="mx-auto mt-3 sm:mt-4 max-w-xl text-sm sm:text-base text-slate-300">
               Create your organization in seconds. Add your managers, distribute the relay, and
               experience seamless sequential execution.
             </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
+            <div className="mt-6 sm:mt-8 flex flex-wrap justify-center gap-3">
               <Link
                 to="/signup"
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-500 hover:shadow-xl active:scale-98"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-7 py-3.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition-all hover:bg-blue-500 hover:shadow-xl active:scale-98"
               >
                 Create free workspace <ArrowRight size={16} />
               </Link>

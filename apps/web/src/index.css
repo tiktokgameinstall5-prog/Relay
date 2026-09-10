@@ -55,3 +55,14 @@ body {
   background: var(--color-cool-slate);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Responsive smooth scrolling helpers for mobile and tablet touch viewports */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
