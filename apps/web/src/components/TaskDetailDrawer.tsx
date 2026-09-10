@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import {
   ArrowRight,
   ArrowRightLeft,
+  Bell,
   Calendar,
   Check,
   CheckCircle2,
@@ -50,6 +51,32 @@ function TaskTypeIcon({ type }: { type: TaskType }) {
   }
 }
 
+function getTurnSlaBadge(startedAt: string | null | undefined) {
+  if (!startedAt) return null;
+  const elapsedMs = Date.now() - new Date(startedAt).getTime();
+  if (isNaN(elapsedMs) || elapsedMs < 0) return null;
+  const elapsedHours = elapsedMs / (1000 * 60 * 60);
+  if (elapsedHours < 4) {
+    return {
+      label: 'On track',
+      color: 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+      icon: '⚡',
+    };
+  }
+  if (elapsedHours < 24) {
+    return {
+      label: 'In flow',
+      color: 'bg-blue-50 text-blue-700 border-blue-200/70',
+      icon: '⏱️',
+    };
+  }
+  return {
+    label: 'Slow turnaround',
+    color: 'bg-amber-50 text-amber-700 border-amber-200/70',
+    icon: '⏳',
+  };
+}
+
 export function TaskDetailDrawer({
   task,
   currentUserId,
@@ -60,6 +87,12 @@ export function TaskDetailDrawer({
 }: TaskDetailDrawerProps) {
   const [copied, setCopied] = useState(false);
   const [forwarding, setForwarding] = useState(false);
+  const [pinged, setPinged] = useState(false);
+
+  function handlePingAssignee() {
+    setPinged(true);
+    setTimeout(() => setPinged(false), 3000);
+  }
 
   // Close on Escape
   useEffect(() => {
@@ -74,6 +107,7 @@ export function TaskDetailDrawer({
     task.status === 'in_progress' && task.currentAssignee?.id === currentUserId;
 
   const activeStep = task.steps.find((s) => s.status === 'active');
+  const sla = getTurnSlaBadge(activeStep?.startedAt);
   const nextStep = activeStep
     ? task.steps.find((s) => s.stepOrder === activeStep.stepOrder + 1)
     : null;
@@ -206,17 +240,45 @@ export function TaskDetailDrawer({
           {/* Key Properties Grid */}
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="rounded-xl border border-slate-200/80 p-3 bg-white shadow-2xs">
-              <span className="text-slate-400 font-medium block">Current Assignee</span>
-              <div className="mt-1 flex items-center gap-2">
-                {task.currentAssignee ? (
-                  <>
-                    <Avatar name={task.currentAssignee.name} size={22} />
-                    <span className="font-semibold text-slate-800 truncate">
-                      {task.currentAssignee.name}
-                    </span>
-                  </>
-                ) : (
-                  <span className="text-slate-500 font-medium">None / Finished</span>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 font-medium block">Current Assignee</span>
+                {sla && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${sla.color}`}
+                    title={`Step turnaround: ${sla.label}`}
+                  >
+                    <span>{sla.icon}</span>
+                    <span>{sla.label}</span>
+                  </span>
+                )}
+              </div>
+              <div className="mt-1.5 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  {task.currentAssignee ? (
+                    <>
+                      <Avatar name={task.currentAssignee.name} size={22} />
+                      <span className="font-semibold text-slate-800 truncate">
+                        {task.currentAssignee.name}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-slate-500 font-medium">None / Finished</span>
+                  )}
+                </div>
+                {!isMyActiveStep && task.status === 'in_progress' && task.currentAssignee && (
+                  <button
+                    type="button"
+                    onClick={handlePingAssignee}
+                    className={`flex items-center gap-1 rounded-md px-2 py-0.5 text-[10.5px] font-semibold transition-all border shrink-0 ${
+                      pinged
+                        ? 'bg-amber-100 text-amber-900 border-amber-300 shadow-2xs scale-95'
+                        : 'bg-amber-50 text-amber-800 border-amber-200/80 hover:bg-amber-100/80 hover:text-amber-900'
+                    }`}
+                    title={`Send a polite baton reminder to ${task.currentAssignee.name}`}
+                  >
+                    <Bell size={11} className={pinged ? 'fill-amber-600 text-amber-600' : 'text-amber-600'} />
+                    <span>{pinged ? 'Nudged! 🔔' : 'Ping 🔔'}</span>
+                  </button>
                 )}
               </div>
             </div>
@@ -350,8 +412,8 @@ export function TaskDetailDrawer({
           </div>
         </div>
 
-        {/* Action Footer (if active user holds the baton) */}
-        {isMyActiveStep && (
+        {/* Action Footer */}
+        {isMyActiveStep ? (
           <div className="border-t border-slate-200 bg-slate-50 p-4 flex items-center justify-between gap-3">
             <div className="text-xs font-medium text-slate-600 flex items-center gap-1.5">
               <Sparkles size={14} className="text-blue-600" />
@@ -372,7 +434,29 @@ export function TaskDetailDrawer({
                   : 'Complete Task'}
             </Button>
           </div>
-        )}
+        ) : task.status === 'in_progress' && task.currentAssignee ? (
+          <div className="border-t border-slate-200 bg-slate-50/80 p-3.5 px-4 flex items-center justify-between gap-3">
+            <div className="text-xs text-slate-600 flex items-center gap-1.5 min-w-0">
+              <span className="h-2 w-2 rounded-full bg-blue-500 animate-ping shrink-0" />
+              <span className="truncate">
+                Currently with <strong className="text-slate-800 font-semibold">{task.currentAssignee.name}</strong>
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handlePingAssignee}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-all shadow-2xs shrink-0 ${
+                pinged
+                  ? 'bg-amber-100 text-amber-900 border-amber-300 scale-95'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800'
+              }`}
+              title={`Send a polite baton reminder to ${task.currentAssignee.name}`}
+            >
+              <Bell size={13} className={pinged ? 'text-amber-600 animate-bounce' : 'text-amber-500'} />
+              <span>{pinged ? `Nudged ${task.currentAssignee.name.split(' ')[0]}! 🔔` : `Ping ${task.currentAssignee.name.split(' ')[0]}`}</span>
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

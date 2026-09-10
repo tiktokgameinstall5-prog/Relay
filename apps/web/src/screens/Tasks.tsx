@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import {
   ArrowRightLeft,
+  Bell,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -96,6 +97,12 @@ export function Tasks() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'in_progress' | 'scheduled' | 'completed'>('all');
   const [selectedDrawerTaskId, setSelectedDrawerTaskId] = useState<string | null>(null);
+  const [celebrationToast, setCelebrationToast] = useState<string | null>(null);
+
+  function triggerCelebration(msg: string) {
+    setCelebrationToast(msg);
+    setTimeout(() => setCelebrationToast(null), 3500);
+  }
 
   const fetchTasks = useCallback(async (isBackground = false) => {
     try {
@@ -183,6 +190,23 @@ export function Tasks() {
       {actionError && (
         <div className="mt-4">
           <Alert tone="error">{actionError}</Alert>
+        </div>
+      )}
+
+      {celebrationToast && (
+        <div className="mt-4 flex items-center justify-between rounded-xl bg-emerald-600 px-4 py-3 text-sm font-semibold text-white shadow-md">
+          <div className="flex items-center gap-2">
+            <span>🎉</span>
+            <span>{celebrationToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setCelebrationToast(null)}
+            className="rounded p-1 hover:bg-emerald-700 text-white"
+            title="Dismiss"
+          >
+            <X size={15} />
+          </button>
         </div>
       )}
 
@@ -363,6 +387,7 @@ export function Tasks() {
                 onOpenDrawer={(t) => setSelectedDrawerTaskId(t.id)}
                 onForwardSuccess={() => {
                   setActionError(null);
+                  triggerCelebration('Baton passed successfully! The next teammate has been notified.');
                   fetchTasks(true);
                 }}
                 onForwardError={(msg) => setActionError(msg)}
@@ -391,6 +416,7 @@ export function Tasks() {
           onClose={() => setSelectedDrawerTaskId(null)}
           onForwardSuccess={() => {
             setActionError(null);
+            triggerCelebration('Baton passed successfully! The next teammate has been notified.');
             fetchTasks(true);
           }}
           onForwardError={(msg) => setActionError(msg)}
@@ -453,6 +479,32 @@ function TaskStatusBadge({ status }: { status: TaskStatus }) {
       In Progress
     </span>
   );
+}
+
+function getTurnSlaBadge(startedAt: string | null | undefined) {
+  if (!startedAt) return null;
+  const elapsedMs = Date.now() - new Date(startedAt).getTime();
+  if (isNaN(elapsedMs) || elapsedMs < 0) return null;
+  const elapsedHours = elapsedMs / (1000 * 60 * 60);
+  if (elapsedHours < 4) {
+    return {
+      label: 'On track',
+      color: 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+      icon: '⚡',
+    };
+  }
+  if (elapsedHours < 24) {
+    return {
+      label: 'In flow',
+      color: 'bg-blue-50 text-blue-700 border-blue-200/70',
+      icon: '⏱️',
+    };
+  }
+  return {
+    label: 'Slow turnaround',
+    color: 'bg-amber-50 text-amber-700 border-amber-200/70',
+    icon: '⏳',
+  };
 }
 
 function TaskDescriptionBox({ description }: { description: string }) {
@@ -574,12 +626,19 @@ function TaskCard({
   const [showHandoffPicker, setShowHandoffPicker] = useState(false);
   const [teamMembers, setTeamMembers] = useState<MemberRow[]>([]);
   const [loadingMembers, setLoadingMembers] = useState(false);
+  const [pinged, setPinged] = useState(false);
+
+  function handlePingAssignee() {
+    setPinged(true);
+    setTimeout(() => setPinged(false), 3000);
+  }
 
   const isMyActiveStep =
     task.status === 'in_progress' && task.currentAssignee?.id === currentUserId;
 
   // Next assignee in sequence (if forwarding to another member)
   const activeStep = task.steps.find((s) => s.status === 'active');
+  const sla = getTurnSlaBadge(activeStep?.startedAt);
   const nextStep = activeStep
     ? task.steps.find((s) => s.stepOrder === activeStep.stepOrder + 1)
     : null;
@@ -739,10 +798,21 @@ function TaskCard({
                 {task.scheduledFor ? `Scheduled for: ${fmtDateTime(task.scheduledFor)}` : 'Scheduled for future'}
               </span>
             ) : task.currentAssignee ? (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50/90 px-2.5 py-0.5 rounded-full border border-blue-200/60">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-                Currently with: {task.currentAssignee.name}
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50/90 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                  <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+                  Currently with: {task.currentAssignee.name}
+                </span>
+                {sla && (
+                  <span
+                    className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full border ${sla.color}`}
+                    title={`Turnaround status: ${sla.label}`}
+                  >
+                    <span>{sla.icon}</span>
+                    <span>{sla.label}</span>
+                  </span>
+                )}
+              </div>
             ) : (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
                 <CheckCircle2 size={12} /> Completed
@@ -767,7 +837,7 @@ function TaskCard({
             )}
           </div>
 
-          {isMyActiveStep && (
+          {isMyActiveStep ? (
             <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
               {(task.teamId || userRole === 'manager') && (
                 <Button
@@ -796,7 +866,19 @@ function TaskCard({
                     : 'Complete Task'}
               </Button>
             </div>
-          )}
+          ) : task.status === 'in_progress' && task.currentAssignee ? (
+            <div className="flex w-full items-center justify-end gap-2 sm:w-auto">
+              <button
+                type="button"
+                onClick={handlePingAssignee}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 active:scale-95"
+                title={`Send a polite baton reminder to ${task.currentAssignee.name}`}
+              >
+                <Bell size={13} className={pinged ? 'text-amber-600 animate-bounce' : 'text-amber-500'} />
+                <span>{pinged ? `Nudged ${task.currentAssignee.name.split(' ')[0]}! 🔔` : `Ping ${task.currentAssignee.name.split(' ')[0]}`}</span>
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {/* Manager: Relay Sequence Builder Flyout */}
