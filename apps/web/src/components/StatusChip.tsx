@@ -18,32 +18,38 @@
  */
 const VARIANTS = {
   active: {
-    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200/70',
+    className:
+      'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/50',
     dot: 'bg-emerald-500',
     label: 'Active',
   },
   in_progress: {
-    className: 'bg-blue-50 text-blue-700 border border-blue-200/70',
+    className:
+      'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/50',
     dot: 'bg-blue-500 animate-pulse',
     label: 'In Progress',
   },
   completed: {
-    className: 'bg-emerald-50 text-emerald-700 border border-emerald-200/70',
+    className:
+      'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/50',
     dot: 'bg-emerald-500',
     label: 'Completed',
   },
   pending: {
-    className: 'bg-amber-50 text-amber-700 border border-amber-200/70',
+    className:
+      'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-400 border border-amber-200/70 dark:border-amber-800/50',
     dot: 'bg-amber-500',
     label: 'Pending',
   },
   scheduled: {
-    className: 'bg-violet-50 text-violet-700 border border-violet-200/70',
+    className:
+      'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-400 border border-violet-200/70 dark:border-violet-800/50',
     dot: 'bg-violet-500',
     label: 'Scheduled',
   },
   inactive: {
-    className: 'bg-slate-100 text-slate-600 border border-slate-200/70',
+    className:
+      'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200/70 dark:border-slate-700',
     dot: 'bg-slate-400',
     label: 'Deactivated',
   },

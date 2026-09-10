@@ -43,10 +43,8 @@ export function RelayChain({
                 <div className="relative">
                   <Avatar name={step.name} size={30} ring={isActive} />
                   {step.state === 'completed' && (
-                    <div className="absolute -right-0.5 -bottom-0.5 rounded-full bg-white dark:bg-[#151821]">
-                      {/* #00C875 / #E7FBF1 mirror the done / done-soft tokens —
-                          lucide takes colour strings on props, not utilities. */}
-                      <CheckCircle2 size={13} color="#00C875" fill="#E7FBF1" />
+                    <div className="absolute -right-0.5 -bottom-0.5 rounded-full bg-white dark:bg-[#0e1118]">
+                      <CheckCircle2 size={13} className="text-[#00C875] fill-[#E7FBF1] dark:fill-[#082a1c]" />
                     </div>
                   )}
                   {isActive && (
@@ -55,12 +53,12 @@ export function RelayChain({
                 </div>
                 <div
                   className={`text-center text-[10.5px] sm:text-[11px] leading-tight font-medium truncate max-w-[58px] xs:max-w-none ${
-                    isActive ? 'text-active' : 'text-muted'
+                    isActive ? 'text-active font-semibold' : 'text-slate-700 dark:text-slate-200'
                   }`}
                 >
                   {firstName}
                 </div>
-                <div className="text-faint font-mono text-[9.5px] sm:text-[10px]">
+                <div className="text-slate-500 dark:text-slate-400 font-mono text-[9.5px] sm:text-[10px]">
                   {durationFromSeconds(step.durationSeconds)}
                 </div>
               </div>

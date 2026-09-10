@@ -182,7 +182,7 @@ export function Tasks() {
         <div>
           <div className="flex items-center gap-2.5">
             <h1 className="font-display text-2xl font-bold tracking-tight text-ink">Tasks</h1>
-            <span className="flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-600 border border-blue-200/60 shadow-2xs">
+            <span className="flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-950/50 px-2.5 py-0.5 text-xs font-semibold text-blue-600 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/50 shadow-2xs">
               <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" /> Live Relay
             </span>
           </div>
@@ -228,18 +228,18 @@ export function Tasks() {
 
       {/* Active Step Prompt Banner (Teamwork & Process Street style) */}
       {myActiveTasks.length > 0 && (
-        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-blue-200 bg-gradient-to-r from-blue-50/90 to-indigo-50/60 p-4 shadow-2xs">
+        <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-gradient-to-r from-blue-50/90 to-indigo-50/60 dark:from-blue-950/40 dark:to-indigo-950/30 p-4 shadow-2xs">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
               <span className="text-base">🏃</span>
             </div>
             <div>
-              <div className="text-xs font-semibold text-blue-950 flex items-center gap-1.5">
+              <div className="text-xs font-semibold text-blue-950 dark:text-blue-100 flex items-center gap-1.5">
                 <span>The baton is with you</span>
                 <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
               </div>
-              <p className="text-xs text-blue-800/90 mt-0.5">
-                You hold the active step on <span className="font-semibold">{myActiveTasks[0].name}</span>.
+              <p className="text-xs text-blue-800/90 dark:text-blue-300 mt-0.5">
+                You hold the active step on <span className="font-semibold text-blue-950 dark:text-white">{myActiveTasks[0].name}</span>.
                 {myActiveTasks.length > 1 && ` (+${myActiveTasks.length - 1} other tasks waiting)`}
               </p>
             </div>
@@ -475,22 +475,22 @@ function EmptyTasksState({
 function TaskStatusBadge({ status }: { status: TaskStatus }) {
   if (status === 'completed') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 border border-emerald-200/70">
-        <CheckCircle2 size={12} className="text-emerald-600" />
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/50">
+        <CheckCircle2 size={12} className="text-emerald-600 dark:text-emerald-400" />
         Completed
       </span>
     );
   }
   if (status === 'scheduled') {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700 border border-violet-200/70">
-        <Clock size={12} className="text-violet-600" />
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-50 dark:bg-violet-950/40 px-2.5 py-0.5 text-xs font-semibold text-violet-700 dark:text-violet-400 border border-violet-200/70 dark:border-violet-800/50">
+        <Clock size={12} className="text-violet-600 dark:text-violet-400" />
         Scheduled
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700 border border-blue-200/70">
+    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 dark:bg-blue-950/40 px-2.5 py-0.5 text-xs font-semibold text-blue-700 dark:text-blue-300 border border-blue-200/70 dark:border-blue-800/50">
       <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
       In Progress
     </span>
@@ -505,20 +505,20 @@ function getTurnSlaBadge(startedAt: string | null | undefined) {
   if (elapsedHours < 4) {
     return {
       label: 'On track',
-      color: 'bg-emerald-50 text-emerald-700 border-emerald-200/70',
+      color: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-400 border-emerald-200/70 dark:border-emerald-800/50',
       icon: '⚡',
     };
   }
   if (elapsedHours < 24) {
     return {
       label: 'In flow',
-      color: 'bg-blue-50 text-blue-700 border-blue-200/70',
+      color: 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200/70 dark:border-blue-800/50',
       icon: '⏱️',
     };
   }
   return {
     label: 'Slow turnaround',
-    color: 'bg-amber-50 text-amber-700 border-amber-200/70',
+    color: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/70 dark:border-amber-800/50',
     icon: '⏳',
   };
 }
@@ -552,40 +552,40 @@ function TaskDescriptionBox({ description }: { description: string }) {
   }
 
   return (
-    <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/60 p-3 transition-colors hover:bg-slate-50/90">
+    <div className="mt-3 rounded-xl border border-slate-200/80 dark:border-[#222738] bg-slate-50/60 dark:bg-[#0e1118] p-3 transition-colors hover:bg-slate-50/90 dark:hover:bg-[#131722]">
       <div className="flex items-center justify-between gap-3">
         {/* Toggle Dropdown Header / Trigger */}
         <button
           type="button"
           onClick={() => setIsOpen((prev) => !prev)}
-          className="group flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="group flex min-w-0 flex-1 items-center gap-2 text-left cursor-pointer"
           title={isOpen ? 'Click to collapse description' : 'Click to drop down full description'}
         >
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white border border-slate-200/70 text-slate-500 shadow-2xs group-hover:border-blue-300 group-hover:text-blue-600 transition-colors">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-white dark:bg-[#1e2333] border border-slate-200/70 dark:border-[#2e354b] text-slate-500 dark:text-slate-400 shadow-2xs group-hover:border-blue-300 dark:group-hover:border-blue-500 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
             <ChevronDown
               size={14}
-              className={`transition-transform duration-200 ${isOpen ? 'rotate-180 text-blue-600' : ''}`}
+              className={`transition-transform duration-200 ${isOpen ? 'rotate-180 text-blue-600 dark:text-blue-400' : ''}`}
             />
           </span>
 
-          <span className="shrink-0 text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-            <FileText size={13} className="text-slate-400" />
+          <span className="shrink-0 text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+            <FileText size={13} className="text-slate-400 dark:text-slate-500" />
             Description
           </span>
 
           {wordCount > 0 && (
-            <span className="shrink-0 rounded-full bg-slate-200/70 px-2 py-0.5 text-[10px] font-medium text-slate-600">
+            <span className="shrink-0 rounded-full bg-slate-200/70 dark:bg-[#1e2333] px-2 py-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300">
               {wordCount} {wordCount === 1 ? 'word' : 'words'}
             </span>
           )}
 
           {!isOpen && (
-            <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
+            <span className="min-w-0 flex-1 truncate text-xs text-slate-500 dark:text-slate-400">
               {description}
             </span>
           )}
 
-          <span className="shrink-0 text-[11px] font-medium text-blue-600 hover:text-blue-700 group-hover:underline">
+          <span className="shrink-0 text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 group-hover:underline">
             {isOpen ? 'Show less' : 'See more'}
           </span>
         </button>
@@ -594,17 +594,17 @@ function TaskDescriptionBox({ description }: { description: string }) {
         <button
           type="button"
           onClick={handleCopy}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 active:scale-95"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 dark:border-[#2e354b] bg-white dark:bg-[#1e2333] px-2.5 py-1 text-xs font-medium text-slate-700 dark:text-slate-200 shadow-2xs transition-all hover:bg-slate-50 dark:hover:bg-[#252b3d] hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-200 dark:hover:border-blue-500 active:scale-95 cursor-pointer"
           title="Copy full description to clipboard"
         >
           {copied ? (
             <>
-              <Check size={13} className="text-emerald-600" />
-              <span className="text-emerald-600 font-semibold">Copied!</span>
+              <Check size={13} className="text-emerald-600 dark:text-emerald-400" />
+              <span className="text-emerald-600 dark:text-emerald-400 font-semibold">Copied!</span>
             </>
           ) : (
             <>
-              <Copy size={13} className="text-slate-400" />
+              <Copy size={13} className="text-slate-400 dark:text-slate-500" />
               <span>Copy description</span>
             </>
           )}
@@ -613,8 +613,8 @@ function TaskDescriptionBox({ description }: { description: string }) {
 
       {/* Expanded Description Dropdown Content */}
       {isOpen && (
-        <div className="mt-2.5 border-t border-slate-200/70 pt-2.5">
-          <div className="select-text font-sans text-xs leading-relaxed text-slate-700 whitespace-pre-wrap break-words">
+        <div className="mt-2.5 border-t border-slate-200/70 dark:border-[#222738] pt-2.5">
+          <div className="select-text font-sans text-xs leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap break-words">
             {description}
           </div>
         </div>
@@ -754,24 +754,24 @@ function TaskCard({
   );
 
   return (
-    <Panel className="overflow-hidden rounded-2xl border border-slate-200/80 shadow-2xs transition-all hover:border-slate-300 hover:shadow-sm">
+    <Panel className="overflow-hidden rounded-2xl border border-slate-200/80 dark:border-[#222738] shadow-2xs transition-all hover:border-slate-300 dark:hover:border-[#2e354b] hover:shadow-sm">
       <div className="p-5 sm:p-6">
         {/* Header: Title, Type, Status & Progress */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 border border-slate-200/60 shadow-2xs">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 dark:bg-[#1e2333] text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-[#2e354b] shadow-2xs">
               <TaskTypeIcon type={task.type} />
             </span>
             <div>
-              <h2 className="text-base font-semibold text-slate-900 tracking-tight">{task.name}</h2>
+              <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100 tracking-tight">{task.name}</h2>
             </div>
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap sm:flex-nowrap">
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 border border-slate-200/60 shrink-0">
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 dark:bg-[#1e2333] px-2.5 py-0.5 font-mono text-[11px] font-medium text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-[#2e354b] shrink-0">
               {task.completedSteps}/{task.totalSteps} steps
             </span>
-            <div className="hidden xs:block sm:block w-12 sm:w-16 bg-slate-200/80 rounded-full h-1.5 overflow-hidden shrink-0">
+            <div className="hidden xs:block sm:block w-12 sm:w-16 bg-slate-200/80 dark:bg-[#252b3d] rounded-full h-1.5 overflow-hidden shrink-0">
               <div
                 className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
                 style={{
@@ -787,7 +787,7 @@ function TaskCard({
             <button
               type="button"
               onClick={() => onOpenDrawer?.(task)}
-              className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 hover:text-blue-600 hover:border-blue-300 transition-colors shadow-2xs shrink-0"
+              className="inline-flex items-center gap-1 rounded-lg border border-slate-200/80 dark:border-[#2e354b] bg-white dark:bg-[#1e2333] px-2 py-1 text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-500 transition-colors shadow-2xs shrink-0 cursor-pointer"
               title="Open task detail drawer"
             >
               <PanelRightOpen size={13} />
@@ -802,20 +802,20 @@ function TaskCard({
         )}
 
         {/* Relay Chain Visualization */}
-        <div className="mt-4 rounded-xl border border-slate-200/60 bg-slate-50/50 p-4">
+        <div className="mt-4 rounded-xl border border-slate-200/60 dark:border-[#222738] bg-slate-50/50 dark:bg-[#0e1118] p-4">
           <div className="mb-2 flex items-center justify-between text-xs">
-            <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-              <ArrowRightLeft size={13} className="text-slate-400" />
+            <span className="font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+              <ArrowRightLeft size={13} className="text-slate-400 dark:text-slate-500" />
               Relay sequence
             </span>
             {task.status === 'scheduled' ? (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 bg-violet-50 px-2.5 py-0.5 rounded-full border border-violet-200/60">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/50 px-2.5 py-0.5 rounded-full border border-violet-200/60 dark:border-violet-800/50">
                 <Clock size={12} />
                 {task.scheduledFor ? `Scheduled for: ${fmtDateTime(task.scheduledFor)}` : 'Scheduled for future'}
               </span>
             ) : task.currentAssignee ? (
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 bg-blue-50/90 px-2.5 py-0.5 rounded-full border border-blue-200/60">
+                <span className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 bg-blue-50/90 dark:bg-blue-950/50 px-2.5 py-0.5 rounded-full border border-blue-200/60 dark:border-blue-800/50">
                   <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
                   Currently with: {task.currentAssignee.name}
                 </span>
@@ -830,7 +830,7 @@ function TaskCard({
                 )}
               </div>
             ) : (
-              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/60">
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/50">
                 <CheckCircle2 size={12} /> Completed
               </span>
             )}
@@ -839,13 +839,13 @@ function TaskCard({
         </div>
 
         {/* Action Bar / Forward & Hand-off Prompts */}
-        <div className="mt-4 flex flex-col items-stretch justify-between gap-3 border-t border-hairline pt-3 text-xs sm:flex-row sm:items-center">
+        <div className="mt-4 flex flex-col items-stretch justify-between gap-3 border-t border-hairline dark:border-[#222738] pt-3 text-xs sm:flex-row sm:items-center">
           <div className="flex items-center gap-3">
-            <div className="text-faint text-[11px] sm:text-xs">Created {fmtDateTime(task.createdAt)}</div>
+            <div className="text-faint dark:text-slate-400 text-[11px] sm:text-xs">Created {fmtDateTime(task.createdAt)}</div>
             {task.status === 'completed' && (
               <Link
                 to="/reports"
-                className="flex items-center gap-1 font-medium text-signal hover:underline"
+                className="flex items-center gap-1 font-medium text-signal dark:text-blue-400 hover:underline"
               >
                 <MessageSquare size={12} />
                 Completion reports →
@@ -887,7 +887,7 @@ function TaskCard({
               <button
                 type="button"
                 onClick={handlePingAssignee}
-                className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-2xs transition-all hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800 active:scale-95"
+                className="w-full sm:w-auto justify-center inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-[#2e354b] bg-white dark:bg-[#1e2333] px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-300 shadow-2xs transition-all hover:border-amber-300 dark:hover:border-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 hover:text-amber-800 dark:hover:text-amber-300 active:scale-95 cursor-pointer"
                 title={`Send a polite baton reminder to ${task.currentAssignee.name}`}
               >
                 <Bell size={13} className={pinged ? 'text-amber-600 animate-bounce' : 'text-amber-500'} />
@@ -899,10 +899,10 @@ function TaskCard({
 
         {/* Manager: Relay Sequence Builder Flyout */}
         {showHandoffPicker && isMyActiveStep && userRole === 'manager' && (
-          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50/70 p-4">
+          <div className="mt-3 rounded-lg border border-blue-200 dark:border-[#222738] bg-blue-50/70 dark:bg-[#0e1118] p-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-semibold text-ink text-xs sm:text-sm flex items-center gap-1.5">
+                <h3 className="font-semibold text-ink dark:text-slate-100 text-xs sm:text-sm flex items-center gap-1.5">
                   <ArrowRightLeft size={14} className="text-active" />
                   Assign relay sequence to team
                 </h3>
@@ -930,8 +930,8 @@ function TaskCard({
               <div className="mt-3 space-y-3">
                 {/* Selected Sequence Steps */}
                 {selectedMemberIds.length > 0 ? (
-                  <div className="space-y-1.5 rounded-lg border border-blue-100 bg-white p-2.5 shadow-2xs">
-                    <div className="flex items-center justify-between pb-1 border-b border-hairline text-[11px] text-muted font-medium">
+                  <div className="space-y-1.5 rounded-lg border border-blue-100 dark:border-[#222738] bg-white dark:bg-[#151821] p-2.5 shadow-2xs">
+                    <div className="flex items-center justify-between pb-1 border-b border-hairline dark:border-[#222738] text-[11px] text-muted font-medium">
                       <span>Ordered relay sequence ({selectedMemberIds.length} steps):</span>
                       <button
                         type="button"
@@ -947,14 +947,14 @@ function TaskCard({
                       return (
                         <div
                           key={`${memId}-${idx}`}
-                          className="flex items-center justify-between rounded-md bg-wash px-2.5 py-1.5 text-xs"
+                          className="flex items-center justify-between rounded-md bg-wash dark:bg-[#0e1118] px-2.5 py-1.5 text-xs"
                         >
                           <div className="flex items-center gap-2">
                             <span className="flex h-4 w-4 items-center justify-center rounded-full bg-active text-[10px] font-bold text-white">
                               {idx + 1}
                             </span>
                             <Avatar name={mName} size={18} />
-                            <span className="font-medium text-ink">{mName}</span>
+                            <span className="font-medium text-ink dark:text-slate-200">{mName}</span>
                           </div>
                           <button
                             type="button"
@@ -969,7 +969,7 @@ function TaskCard({
                     })}
                   </div>
                 ) : (
-                  <div className="rounded-lg border border-dashed border-blue-200 bg-white/70 p-3 text-center text-xs text-muted">
+                  <div className="rounded-lg border border-dashed border-blue-200 dark:border-[#2e354b] bg-white/70 dark:bg-[#151821]/70 p-3 text-center text-xs text-muted">
                     No sequence steps added yet. Click members below to build the relay chain.
                   </div>
                 )}
@@ -999,8 +999,8 @@ function TaskCard({
                           onClick={() => handleAddSequenceStep(peer.id)}
                           className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
                             isSelected
-                              ? 'border-hairline bg-cool-slate text-faint cursor-not-allowed'
-                              : 'border-blue-200 bg-white text-ink hover:border-active hover:bg-blue-50 hover:text-active'
+                              ? 'border-hairline dark:border-[#222738] bg-cool-slate dark:bg-[#151821] text-faint cursor-not-allowed'
+                              : 'border-blue-200 dark:border-[#2e354b] bg-white dark:bg-[#1e2333] text-ink dark:text-slate-200 hover:border-active hover:bg-blue-50 dark:hover:bg-[#252b3d] hover:text-active'
                           }`}
                         >
                           <Plus size={12} className={isSelected ? 'text-faint' : 'text-active'} />
@@ -1013,7 +1013,7 @@ function TaskCard({
                 </div>
 
                 {/* Submit Sequence Button */}
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 border-t border-blue-100 pt-3">
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-2 border-t border-blue-100 dark:border-[#222738] pt-3">
                   <Button
                     variant="secondary"
                     onClick={() => {
@@ -1043,9 +1043,9 @@ function TaskCard({
 
         {/* Member: Single Peer Hand-off Selector Flyout */}
         {showHandoffPicker && isMyActiveStep && userRole === 'member' && (
-          <div className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50 p-3">
+          <div className="mt-3 rounded-lg border border-blue-100 dark:border-[#222738] bg-blue-50/50 dark:bg-[#0e1118] p-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-ink">Select teammate to hand off to:</span>
+              <span className="font-semibold text-ink dark:text-slate-100">Select teammate to hand off to:</span>
               <button
                 type="button"
                 onClick={() => setShowHandoffPicker(false)}
@@ -1067,7 +1067,7 @@ function TaskCard({
                     type="button"
                     onClick={() => handleForward(peer.id)}
                     disabled={forwarding}
-                    className="flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-3 py-1 text-xs font-medium text-ink shadow-2xs transition-colors hover:border-active hover:bg-blue-50 hover:text-active"
+                    className="flex items-center gap-1.5 rounded-full border border-blue-200 dark:border-[#2e354b] bg-white dark:bg-[#1e2333] px-3 py-1 text-xs font-medium text-ink dark:text-slate-200 shadow-2xs transition-colors hover:border-active hover:bg-blue-50 dark:hover:bg-[#252b3d] hover:text-active"
                   >
                     <Avatar name={peer.name} size={18} />
                     <span>{peer.name}</span>

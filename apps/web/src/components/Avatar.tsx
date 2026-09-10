@@ -29,7 +29,7 @@ export function Avatar({
       className={`font-display flex shrink-0 items-center justify-center rounded-full font-semibold ${
         ring
           ? 'bg-active border-active border-2 text-white'
-          : 'border-hairline border bg-[#EEF0F3] text-[#68707C]'
+          : 'border border-hairline dark:border-[#2e354b] bg-[#EEF0F3] dark:bg-[#1c2233] text-[#68707C] dark:text-[#94a3b8]'
       }`}
       style={{ width: size, height: size, fontSize: size * 0.36 }}
       aria-hidden="true"
