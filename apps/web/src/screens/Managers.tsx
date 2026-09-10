@@ -88,7 +88,7 @@ export function Managers() {
       </div>
 
       {/* Tabs */}
-      <div className="mb-5 border-b border-gray-200">
+      <div className="mb-5 border-b border-gray-200 dark:border-[#222738]">
         <nav className="-mb-px flex space-x-6" aria-label="Tabs">
           <button
             type="button"
@@ -96,7 +96,7 @@ export function Managers() {
             className={`whitespace-nowrap pb-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === 'active'
                 ? 'border-primary text-primary font-semibold'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-700'
             }`}
           >
             Active Managers
@@ -107,12 +107,12 @@ export function Managers() {
             className={`whitespace-nowrap pb-3 text-sm font-medium transition-colors border-b-2 flex items-center gap-1.5 ${
               activeTab === 'deleted'
                 ? 'border-primary text-primary font-semibold'
-                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:border-slate-700'
             }`}
           >
             <span>Recently Deleted</span>
             {deletedList.length > 0 && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+              <span className="rounded-full bg-red-100 dark:bg-red-950/40 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-400">
                 {deletedList.length}
               </span>
             )}
@@ -187,22 +187,22 @@ function ManagerList({
   onDeleteClick: (manager: ManagerListRow) => void;
 }) {
   return (
-    <div className="border-hairline overflow-hidden rounded-xl border bg-white shadow-sm">
-      <div className="border-hairline flex items-center gap-2 border-b px-4 py-3 bg-gray-50/50">
+    <div className="border-hairline overflow-hidden rounded-xl border bg-white dark:bg-[#151821] dark:border-[#222738] shadow-sm">
+      <div className="border-hairline flex items-center gap-2 border-b px-4 py-3 bg-gray-50/50 dark:bg-[#181c27] dark:border-[#222738]">
         <Crown size={15} className="text-signal" />
-        <h2 className="font-display text-[14px] font-semibold">
+        <h2 className="font-display text-[14px] font-semibold text-gray-900 dark:text-slate-100">
           All managers · {managers.length}
         </h2>
       </div>
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-gray-100 dark:divide-[#222738]">
         {managers.map((manager) => (
           <li
             key={manager.id}
-            className="flex items-center gap-3 px-4 py-3 transition hover:bg-gray-50/75"
+            className="flex items-center gap-3 px-4 py-3 transition hover:bg-gray-50/75 dark:hover:bg-[#181c27]/75"
           >
             <Avatar name={manager.name} size={32} />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-gray-900">{manager.name}</div>
+              <div className="truncate text-sm font-medium text-gray-900 dark:text-slate-100">{manager.name}</div>
               <div className="text-muted truncate text-[12px]">{manager.email}</div>
             </div>
             <div className="hidden text-right sm:block">
@@ -221,7 +221,7 @@ function ManagerList({
                 type="button"
                 onClick={() => onDeleteClick(manager)}
                 title="Delete manager"
-                className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition"
+                className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition"
               >
                 <Trash2 size={15} />
               </button>
@@ -250,7 +250,7 @@ function RecentlyDeletedView({
 
   if (loading && items.length === 0) {
     return (
-      <div className="py-12 text-center text-sm text-gray-400">
+      <div className="py-12 text-center text-sm text-gray-400 dark:text-slate-500">
         <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin text-primary" />
         Loading recently deleted managers...
       </div>
@@ -259,7 +259,7 @@ function RecentlyDeletedView({
 
   if (error) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-700">
+      <div className="rounded-xl border border-red-200 dark:border-red-900/40 bg-red-50 dark:bg-red-950/30 p-4 text-xs text-red-700 dark:text-red-300">
         {error}
       </div>
     );
@@ -267,9 +267,9 @@ function RecentlyDeletedView({
 
   if (items.length === 0) {
     return (
-      <div className="border-hairline rounded-xl border bg-white p-10 text-center">
-        <Clock className="mx-auto h-8 w-8 text-gray-300" />
-        <h2 className="font-display mt-3 text-base font-semibold text-gray-800">No recently deleted managers</h2>
+      <div className="border-hairline rounded-xl border bg-white dark:bg-[#151821] dark:border-[#222738] p-10 text-center">
+        <Clock className="mx-auto h-8 w-8 text-gray-300 dark:text-slate-600" />
+        <h2 className="font-display mt-3 text-base font-semibold text-gray-800 dark:text-slate-100">No recently deleted managers</h2>
         <p className="text-muted mx-auto mt-1 max-w-sm text-xs">
           Soft-deleted managers appear here for 30 days before permanent cleanup, and can be restored with a single click.
         </p>
@@ -278,11 +278,11 @@ function RecentlyDeletedView({
   }
 
   return (
-    <div className="border-hairline overflow-hidden rounded-xl border bg-white shadow-sm">
-      <div className="border-hairline flex items-center justify-between border-b px-4 py-3 bg-gray-50/50">
+    <div className="border-hairline overflow-hidden rounded-xl border bg-white dark:bg-[#151821] dark:border-[#222738] shadow-sm">
+      <div className="border-hairline flex items-center justify-between border-b px-4 py-3 bg-gray-50/50 dark:bg-[#181c27] dark:border-[#222738]">
         <div className="flex items-center gap-2">
           <Clock size={15} className="text-amber-500" />
-          <h2 className="font-display text-[14px] font-semibold text-gray-800">
+          <h2 className="font-display text-[14px] font-semibold text-gray-800 dark:text-slate-100">
             30-Day Recovery Queue · {items.length}
           </h2>
         </div>
@@ -295,23 +295,23 @@ function RecentlyDeletedView({
           Refresh
         </button>
       </div>
-      <ul className="divide-y divide-gray-100">
+      <ul className="divide-y divide-gray-100 dark:divide-[#222738]">
         {items.map((item) => (
-          <li key={item.id} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-gray-50/50">
+          <li key={item.id} className="flex items-center gap-3 px-4 py-3.5 transition hover:bg-gray-50/50 dark:hover:bg-[#181c27]/50">
             <Avatar name={item.name} size={32} />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-gray-900">{item.name}</div>
+              <div className="truncate text-sm font-medium text-gray-900 dark:text-slate-100">{item.name}</div>
               <div className="text-muted truncate text-xs">{item.email}</div>
               {item.teamName && (
-                <div className="text-xs text-gray-500 mt-0.5">Team: <span className="font-medium text-gray-700">{item.teamName}</span></div>
+                <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Team: <span className="font-medium text-gray-700 dark:text-slate-200">{item.teamName}</span></div>
               )}
             </div>
             <div className="text-right">
-              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 border border-amber-200">
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-900/40">
                 <Clock size={11} />
                 {item.expiresInDays}d left to restore
               </span>
-              <div className="text-[11px] text-gray-400 mt-1 font-mono">
+              <div className="text-[11px] text-gray-400 dark:text-slate-500 mt-1 font-mono">
                 Deleted {fmtDateTime(item.deletedAt)}
               </div>
             </div>
@@ -348,11 +348,11 @@ function ManagerChip({ manager }: { manager: ManagerListRow }) {
 
 function EmptyState() {
   return (
-    <div className="border-hairline rounded-xl border bg-white p-10 text-center">
+    <div className="border-hairline rounded-xl border bg-white dark:bg-[#151821] dark:border-[#222738] p-10 text-center">
       <div className="bg-signal-soft mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
         <Crown size={22} className="text-signal" />
       </div>
-      <h2 className="font-display mt-4 text-base font-semibold">No managers yet</h2>
+      <h2 className="font-display mt-4 text-base font-semibold text-gray-900 dark:text-slate-100">No managers yet</h2>
       <p className="text-muted mx-auto mt-1.5 max-w-md text-sm">
         Managers can’t sign themselves up. Create the first account — Relay emails them a
         single-use passcode to activate and build their own team.
@@ -477,10 +477,10 @@ function DeleteImpactModal({
   return (
     <ModalShell title="Delete Manager — Confirmation Required" onClose={onClose}>
       <div className="space-y-4">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3.5 text-xs text-red-800 flex items-start gap-2.5">
-          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+        <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 p-3.5 text-xs text-red-800 dark:text-red-300 flex items-start gap-2.5">
+          <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
           <div>
-            <div className="font-semibold text-red-900">Cascading Soft-Delete Warning</div>
+            <div className="font-semibold text-red-900 dark:text-red-200">Cascading Soft-Delete Warning</div>
             <div className="mt-0.5">
               Deleting this manager will deactivate their account, their team, and all team members.
               This can be restored within 30 days from the "Recently Deleted" tab.
@@ -489,27 +489,27 @@ function DeleteImpactModal({
         </div>
 
         {loadingImpact ? (
-          <div className="py-6 text-center text-xs text-gray-500">
+          <div className="py-6 text-center text-xs text-gray-500 dark:text-slate-400">
             <RefreshCw className="mx-auto mb-2 h-4 w-4 animate-spin text-primary" />
             Analyzing team dependencies and impact...
           </div>
         ) : error && !impact ? (
           <Alert>{error}</Alert>
         ) : impact ? (
-          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 space-y-2.5">
-            <div className="text-xs font-semibold text-gray-700">Affected Resources:</div>
+          <div className="rounded-xl border border-gray-200 dark:border-[#222738] bg-gray-50 dark:bg-[#0e1118] p-4 space-y-2.5">
+            <div className="text-xs font-semibold text-gray-700 dark:text-slate-300">Affected Resources:</div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-lg bg-white p-2.5 border border-gray-200">
+              <div className="rounded-lg bg-white dark:bg-[#151821] p-2.5 border border-gray-200 dark:border-[#222738]">
                 <span className="text-muted block text-[11px]">Team Name</span>
-                <span className="font-semibold text-gray-900">{impact.teamName}</span>
+                <span className="font-semibold text-gray-900 dark:text-slate-100">{impact.teamName}</span>
               </div>
-              <div className="rounded-lg bg-white p-2.5 border border-gray-200">
+              <div className="rounded-lg bg-white dark:bg-[#151821] p-2.5 border border-gray-200 dark:border-[#222738]">
                 <span className="text-muted block text-[11px]">Members</span>
-                <span className="font-semibold text-gray-900">{impact.memberCount} active member(s)</span>
+                <span className="font-semibold text-gray-900 dark:text-slate-100">{impact.memberCount} active member(s)</span>
               </div>
-              <div className="rounded-lg bg-white p-2.5 border border-gray-200 col-span-2">
+              <div className="rounded-lg bg-white dark:bg-[#151821] p-2.5 border border-gray-200 dark:border-[#222738] col-span-2">
                 <span className="text-muted block text-[11px]">Active Tasks</span>
-                <span className="font-semibold text-gray-900">{impact.activeTaskCount} scheduled / in-progress task(s)</span>
+                <span className="font-semibold text-gray-900 dark:text-slate-100">{impact.activeTaskCount} scheduled / in-progress task(s)</span>
               </div>
             </div>
           </div>
@@ -518,19 +518,19 @@ function DeleteImpactModal({
         {error && impact && <Alert>{error}</Alert>}
 
         <div className="space-y-1.5 pt-1">
-          <label className="block text-xs font-medium text-gray-700">
-            Type <span className="font-bold text-gray-900 select-all">{manager.name}</span> to confirm deletion:
+          <label className="block text-xs font-medium text-gray-700 dark:text-slate-300">
+            Type <span className="font-bold text-gray-900 dark:text-slate-100 select-all">{manager.name}</span> to confirm deletion:
           </label>
           <input
             type="text"
             value={confirmName}
             onChange={(e) => setConfirmName(e.target.value)}
             placeholder={manager.name}
-            className="w-full rounded-lg border border-gray-300 px-3 py-2 text-xs text-gray-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+            className="w-full rounded-lg border border-gray-300 dark:border-[#222738] bg-white dark:bg-[#0e1118] px-3 py-2 text-xs text-gray-900 dark:text-slate-100 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
           />
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+        <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100 dark:border-[#222738]">
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>

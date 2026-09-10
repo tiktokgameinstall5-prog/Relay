@@ -36,6 +36,7 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import { Avatar } from '../components/Avatar';
 import { NotificationBell } from '../components/NotificationBell';
+import { ThemeToggle } from '../components/ThemeToggle';
 import type { UserRole } from '../api/types';
 
 interface NavItem {
@@ -80,7 +81,7 @@ export function AppShell() {
   const currentNavLabel = nav.find((i) => i.to === location.pathname)?.label ?? 'Workspace';
 
   return (
-    <div className="bg-[#f8fafc] text-ink flex min-h-screen">
+    <div className="bg-[#f8fafc] dark:bg-[#0b0d13] text-ink dark:text-slate-100 flex min-h-screen transition-colors">
       {/* ---- Dark workspace sidebar — md and up (Linear / Hive inspired) ---- */}
       <aside className="bg-[#0f1117] border-r border-slate-800/80 hidden shrink-0 md:flex md:flex-col md:w-56 lg:w-64 select-none">
         {/* Brand header */}
@@ -176,29 +177,31 @@ export function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* ---- Global Workspace Top Bar (Desktop & Tablet) ---- */}
-        <header className="hidden md:flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 bg-white/80 px-4 lg:px-6 backdrop-blur-md">
+        <header className="hidden md:flex h-14 shrink-0 items-center justify-between border-b border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-[#0e111a]/85 px-4 lg:px-6 backdrop-blur-md transition-colors">
           {/* Breadcrumbs */}
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span className="font-medium text-slate-400">Relay</span>
-            <ChevronRight size={12} className="text-slate-300" />
-            <span className="font-semibold text-slate-800">{currentNavLabel}</span>
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <span className="font-medium text-slate-400 dark:text-slate-500">Relay</span>
+            <ChevronRight size={12} className="text-slate-300 dark:text-slate-600" />
+            <span className="font-semibold text-slate-800 dark:text-slate-200">{currentNavLabel}</span>
           </div>
 
-          {/* Status pill & real-time badge */}
+          {/* Status pill & real-time badge & theme toggle */}
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 border border-emerald-200/70 shadow-2xs">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-400 border border-emerald-200/70 dark:border-emerald-800/50 shadow-2xs">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
               Live Workspace
             </span>
+            <ThemeToggle />
           </div>
         </header>
 
         {/* ---- Mobile header + tab bar — below md, where the sidebar is hidden ---- */}
-        <div className="border-b border-slate-200 bg-white px-4 py-3 flex items-center gap-2 md:hidden">
+        <div className="border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0e111a] px-4 py-3 flex items-center gap-2 md:hidden transition-colors">
           <div className="bg-gradient-to-tr from-blue-600 to-indigo-500 flex h-7 w-7 items-center justify-center rounded-lg">
             <Layers size={15} color="white" />
           </div>
-          <span className="font-display flex-1 text-[15px] font-bold text-slate-900">Relay</span>
+          <span className="font-display flex-1 text-[15px] font-bold text-slate-900 dark:text-white">Relay</span>
+          <ThemeToggle />
           <NotificationBell />
           <Link to="/profile" title="View profile" className="flex items-center">
             <Avatar name={user.name} size={26} />
@@ -207,7 +210,7 @@ export function AppShell() {
             type="button"
             onClick={signOut}
             aria-label="Sign out"
-            className="text-[#68707C] hover:text-slate-900 p-1"
+            className="text-[#68707C] dark:text-slate-400 hover:text-slate-900 dark:hover:text-white p-1"
           >
             <LogOut size={16} />
           </button>
@@ -215,7 +218,7 @@ export function AppShell() {
         <nav
           aria-label="Primary"
           data-testid="mobile-nav"
-          className="border-b border-slate-200 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth touch-pan-x bg-white px-4 py-2 md:hidden"
+          className="border-b border-slate-200 dark:border-slate-800 flex gap-2 overflow-x-auto no-scrollbar scroll-smooth touch-pan-x bg-white dark:bg-[#0e111a] px-4 py-2 md:hidden transition-colors"
         >
           {nav.map((item) => (
             <NavLink
@@ -223,7 +226,9 @@ export function AppShell() {
               to={item.to}
               className={({ isActive }) =>
                 `flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors ${
-                  isActive ? 'bg-signal text-white shadow-2xs' : 'bg-cool-slate text-[#68707C] hover:text-slate-900'
+                  isActive
+                    ? 'bg-signal text-white shadow-2xs'
+                    : 'bg-cool-slate dark:bg-slate-800/70 text-[#68707C] dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
                 }`
               }
             >

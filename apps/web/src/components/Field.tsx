@@ -27,7 +27,7 @@ export function Field({ label, hint, error, type, className = '', ...rest }: Fie
 
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-xs font-medium text-[#68707C]">
+      <label htmlFor={id} className="mb-1 block text-xs font-medium text-[#68707C] dark:text-slate-300">
         {label}
       </label>
       <div className="relative">
@@ -38,10 +38,10 @@ export function Field({ label, hint, error, type, className = '', ...rest }: Fie
           aria-invalid={error !== undefined ? true : undefined}
           // className lands on the input, not the wrapper — callers pass things
           // like font-mono for a passcode field, which is about the text.
-          className={`focus:ring-signal w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 ${
+          className={`focus:ring-signal dark:focus:ring-blue-500 bg-white dark:bg-[#0e1118] text-ink dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:ring-2 transition-colors ${
             isPassword ? 'pr-10' : ''
           } ${
-            error !== undefined ? 'border-red-400' : 'border-hairline'
+            error !== undefined ? 'border-red-400 dark:border-red-500/80' : 'border-hairline dark:border-[#222738]'
           } ${className}`}
           {...rest}
         />
@@ -51,19 +51,19 @@ export function Field({ label, hint, error, type, className = '', ...rest }: Fie
             onClick={() => setShowPassword((prev) => !prev)}
             aria-label={showPassword ? 'Hide password' : 'Show password'}
             title={showPassword ? 'Hide password' : 'Show password'}
-            className="text-muted hover:text-ink absolute inset-y-0 right-0 flex items-center pr-3 focus:outline-none"
+            className="text-muted dark:text-slate-400 hover:text-ink dark:hover:text-slate-200 absolute inset-y-0 right-0 flex items-center pr-3 focus:outline-none"
           >
             {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
           </button>
         )}
       </div>
       {error !== undefined && (
-        <p id={errorId} className="mt-1 text-[11px] text-red-600">
+        <p id={errorId} className="mt-1 text-[11px] text-red-600 dark:text-red-400">
           {error}
         </p>
       )}
       {error === undefined && hint !== undefined && (
-        <p id={hintId} className="mt-1 text-[11px] text-[#9AA1AC]">
+        <p id={hintId} className="mt-1 text-[11px] text-[#9AA1AC] dark:text-slate-400">
           {hint}
         </p>
       )}

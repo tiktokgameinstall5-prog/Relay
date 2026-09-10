@@ -257,7 +257,7 @@ export function Tasks() {
 
       {/* Search & Status Filters Toolbar (ClickUp & Asana style) */}
       {tasks && tasks.length > 0 && (
-        <div className="mt-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 rounded-xl border border-slate-200/80 bg-white p-2.5 shadow-2xs">
+        <div className="mt-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 rounded-xl border border-slate-200/80 dark:border-[#222738] bg-white dark:bg-[#151821] p-2.5 shadow-2xs">
           {/* Status Filter Buttons */}
           <div className="flex items-center gap-1 overflow-x-auto no-scrollbar scroll-smooth touch-pan-x pb-1 md:pb-0 shrink-0">
             <button
@@ -265,14 +265,14 @@ export function Tasks() {
               onClick={() => setStatusFilter('all')}
               className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
                 statusFilter === 'all'
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  ? 'bg-slate-900 dark:bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <span>All</span>
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  statusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                  statusFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                 }`}
               >
                 {allCount}
@@ -285,13 +285,13 @@ export function Tasks() {
               className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
                 statusFilter === 'in_progress'
                   ? 'bg-blue-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <span>In Progress</span>
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  statusFilter === 'in_progress' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+                  statusFilter === 'in_progress' ? 'bg-white/20 text-white' : 'bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300'
                 }`}
               >
                 {inProgressCount}
@@ -304,13 +304,13 @@ export function Tasks() {
               className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
                 statusFilter === 'scheduled'
                   ? 'bg-violet-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <span>Upcoming</span>
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  statusFilter === 'scheduled' ? 'bg-white/20 text-white' : 'bg-violet-100 text-violet-800'
+                  statusFilter === 'scheduled' ? 'bg-white/20 text-white' : 'bg-violet-100 dark:bg-violet-950/60 text-violet-800 dark:text-violet-300'
                 }`}
               >
                 {scheduledCount}
@@ -323,13 +323,13 @@ export function Tasks() {
               className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all ${
                 statusFilter === 'completed'
                   ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <span>Completed</span>
               <span
                 className={`rounded-full px-1.5 py-0.2 text-[10px] font-bold ${
-                  statusFilter === 'completed' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+                  statusFilter === 'completed' ? 'bg-white/20 text-white' : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
                 }`}
               >
                 {completedCount}
@@ -347,7 +347,7 @@ export function Tasks() {
               placeholder="Filter tasks by name or person..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50/70 py-1.5 pl-8 pr-7 text-xs text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
+              className="w-full rounded-lg border border-slate-200 dark:border-[#222738] bg-slate-50/70 dark:bg-[#0e1118] py-1.5 pl-8 pr-7 text-xs text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:border-blue-500 focus:bg-white dark:focus:bg-[#0e1118] focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all"
             />
             {searchQuery && (
               <button
@@ -373,10 +373,10 @@ export function Tasks() {
         ) : tasks && tasks.length === 0 ? (
           <EmptyTasksState canAssign={canAssign} onAssign={() => setShowCreateModal(true)} />
         ) : filteredTasks && filteredTasks.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 p-10 text-center bg-white/60">
+          <div className="rounded-2xl border border-dashed border-slate-300 dark:border-slate-800 p-10 text-center bg-white/60 dark:bg-[#151821]/60">
             <FileText size={28} className="mx-auto text-slate-400" />
-            <h3 className="mt-3 text-sm font-semibold text-slate-800">No matching tasks found</h3>
-            <p className="mt-1 text-xs text-slate-500">
+            <h3 className="mt-3 text-sm font-semibold text-slate-800 dark:text-slate-200">No matching tasks found</h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               Try adjusting your search query or status filter to see other workflows.
             </p>
             <div className="mt-4">
@@ -1675,8 +1675,8 @@ function CreateTaskModal({
                   onClick={() => setType(item.id)}
                   className={`flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors ${
                     isSelected
-                      ? 'border-active bg-blue-50 text-active'
-                      : 'border-hairline bg-white text-muted hover:bg-cool-slate'
+                      ? 'border-active bg-blue-50 dark:bg-blue-950/40 text-active dark:text-blue-400'
+                      : 'border-hairline dark:border-[#222738] bg-white dark:bg-[#151821] text-muted dark:text-slate-400 hover:bg-cool-slate dark:hover:bg-slate-800'
                   }`}
                 >
                   <Icon size={14} />
@@ -1689,11 +1689,11 @@ function CreateTaskModal({
 
         <div>
           <div className="mb-1 flex items-center justify-between">
-            <label className="block text-xs font-medium text-muted">
+            <label className="block text-xs font-medium text-muted dark:text-slate-400">
               Description & Instructions (optional · long text supported)
             </label>
             {description.length > 0 && (
-              <span className="text-[11px] text-faint">
+              <span className="text-[11px] text-faint dark:text-slate-500">
                 {description.trim().split(/\s+/).filter(Boolean).length} words · {description.length.toLocaleString()} chars
               </span>
             )}
@@ -1703,15 +1703,15 @@ function CreateTaskModal({
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Detailed instructions, requirements, deliverables, or long text / specifications for this task..."
-            className="focus:ring-signal min-h-[110px] w-full resize-y rounded-lg border border-hairline px-3 py-2 text-sm font-sans leading-relaxed outline-none focus:ring-2"
+            className="focus:ring-signal min-h-[110px] w-full resize-y rounded-lg border border-hairline dark:border-[#222738] bg-white dark:bg-[#0e1118] text-ink dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 px-3 py-2 text-sm font-sans leading-relaxed outline-none focus:ring-2 transition-colors"
           />
-          <div className="mt-1 flex items-center justify-between text-[11px] text-muted">
+          <div className="mt-1 flex items-center justify-between text-[11px] text-muted dark:text-slate-400">
             <span>Supports long instructions, multi-paragraph text, and bullet points.</span>
             {description.length > 0 && (
               <button
                 type="button"
                 onClick={() => setDescription('')}
-                className="text-faint hover:text-red-500 transition-colors"
+                className="text-faint dark:text-slate-400 hover:text-red-500 transition-colors"
               >
                 Clear
               </button>
@@ -1720,19 +1720,19 @@ function CreateTaskModal({
         </div>
 
         {/* Attachment Upload Section */}
-        <div className="rounded-lg border border-hairline bg-slate-50/70 p-3">
+        <div className="rounded-lg border border-hairline dark:border-[#222738] bg-slate-50/70 dark:bg-slate-900/50 p-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Paperclip size={16} className={attachedFile ? 'text-active' : 'text-muted'} />
+              <Paperclip size={16} className={attachedFile ? 'text-active' : 'text-muted dark:text-slate-400'} />
               <div>
-                <div className="text-xs font-semibold text-ink">
+                <div className="text-xs font-semibold text-ink dark:text-slate-200">
                   {type === 'video'
                     ? 'Attach master video (Optional)'
                     : type === 'file'
                       ? 'Attach file (Optional)'
                       : 'Attach reference document (Optional)'}
                 </div>
-                <div className="text-[11px] text-muted">
+                <div className="text-[11px] text-muted dark:text-slate-400">
                   {type === 'video'
                     ? 'Lossless original video (MP4, WebM, MOV) — Max 30MB'
                     : type === 'file'
@@ -1743,7 +1743,7 @@ function CreateTaskModal({
             </div>
 
             {!attachedFile && (
-              <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-hairline bg-white px-2.5 py-1.5 text-xs font-medium text-ink shadow-2xs hover:border-active hover:bg-blue-50 transition-colors">
+              <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-hairline dark:border-[#222738] bg-white dark:bg-[#151821] px-2.5 py-1.5 text-xs font-medium text-ink dark:text-slate-200 shadow-2xs hover:border-active hover:bg-blue-50 dark:hover:bg-blue-950/40 transition-colors">
                 <UploadCloud size={14} className="text-active" />
                 <span>Choose file</span>
                 <input
@@ -1767,7 +1767,7 @@ function CreateTaskModal({
           )}
 
           {attachedFile && (
-            <div className="mt-2.5 flex items-center justify-between rounded-md border border-hairline bg-white px-3 py-2 text-xs shadow-2xs">
+            <div className="mt-2.5 flex items-center justify-between rounded-md border border-hairline dark:border-[#222738] bg-white dark:bg-[#151821] px-3 py-2 text-xs shadow-2xs">
               <div className="flex items-center gap-2 truncate">
                 {type === 'video' ? (
                   <Film size={15} className="text-active shrink-0" />
@@ -1776,7 +1776,7 @@ function CreateTaskModal({
                 ) : (
                   <FileText size={15} className="text-muted shrink-0" />
                 )}
-                <span className="font-medium text-ink truncate" title={attachedFile.name}>
+                <span className="font-medium text-ink dark:text-slate-200 truncate" title={attachedFile.name}>
                   {attachedFile.name}
                 </span>
                 <span className="text-faint shrink-0 font-mono">
@@ -1893,16 +1893,16 @@ function CreateTaskModal({
                           return (
                             <div
                               key={`${memberId}-${idx}`}
-                              className="flex items-center justify-between rounded-md border border-hairline bg-white px-3 py-2 text-sm shadow-xs"
+                              className="flex items-center justify-between rounded-md border border-hairline dark:border-[#222738] bg-white dark:bg-[#151821] px-3 py-2 text-sm shadow-xs"
                             >
                               <div className="flex items-center gap-2.5">
                                 <span className="flex h-5 w-5 items-center justify-center rounded-full bg-active font-mono text-[10px] font-bold text-white">
                                   {idx + 1}
                                 </span>
                                 <Avatar name={memberName} size={24} />
-                                <span className="font-medium text-ink">{memberName}</span>
+                                <span className="font-medium text-ink dark:text-slate-200">{memberName}</span>
                                 {m?.pendingInvite && (
-                                  <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+                                  <span className="rounded bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
                                     Pending invite
                                   </span>
                                 )}
@@ -1910,7 +1910,7 @@ function CreateTaskModal({
                               <button
                                 type="button"
                                 onClick={() => handleRemoveStep(idx)}
-                                className="text-faint hover:text-red-500"
+                                className="text-faint dark:text-slate-400 hover:text-red-500"
                                 title="Remove step"
                               >
                                 <X size={14} />
@@ -1920,7 +1920,7 @@ function CreateTaskModal({
                         })}
                       </div>
                     ) : (
-                      <div className="rounded-lg border border-dashed border-hairline p-4 text-center text-xs text-muted">
+                      <div className="rounded-lg border border-dashed border-hairline dark:border-[#222738] p-4 text-center text-xs text-muted dark:text-slate-400">
                         {isOwner
                           ? 'No custom sequence chosen. Task will flow through all team members.'
                           : 'No members added to the chain yet. Click below to add steps.'}
@@ -1929,7 +1929,7 @@ function CreateTaskModal({
 
                     {/* Available Team Members to Append */}
                     <div>
-                      <span className="text-muted block text-xs font-medium">Add step to chain:</span>
+                      <span className="text-muted dark:text-slate-400 block text-xs font-medium">Add step to chain:</span>
                       {members.length === 0 ? (
                         <p className="text-amber mt-1 text-xs">
                           No active members found in this team roster.
@@ -1946,8 +1946,8 @@ function CreateTaskModal({
                                 onClick={() => handleAddMemberToRelay(m.id)}
                                 className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
                                   isAlreadySelected
-                                    ? 'border-hairline bg-cool-slate text-faint cursor-not-allowed'
-                                    : 'border-hairline bg-white text-ink hover:border-active hover:bg-blue-50'
+                                    ? 'border-hairline dark:border-[#222738] bg-cool-slate dark:bg-slate-800 text-faint dark:text-slate-500 cursor-not-allowed'
+                                    : 'border-hairline dark:border-[#222738] bg-white dark:bg-[#151821] text-ink dark:text-slate-200 hover:border-active hover:bg-blue-50 dark:hover:bg-blue-950/40'
                                 }`}
                               >
                                 <Plus size={12} className={isAlreadySelected ? 'text-faint' : 'text-active'} />

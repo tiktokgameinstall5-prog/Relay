@@ -77,16 +77,16 @@ export function Teams() {
 
 function TeamList({ teams }: { teams: TeamListRow[] }) {
   return (
-    <div className="border-hairline overflow-hidden rounded-xl border bg-white">
+    <div className="border-hairline dark:border-[#222738] overflow-hidden rounded-xl border bg-white dark:bg-[#151821]">
       {teams.map((team) => (
         <Link
           key={team.id}
           to={`/teams/${team.id}`}
-          className="border-hairline hover:bg-cool-slate flex items-center gap-3 border-b px-4 py-3 last:border-0"
+          className="border-hairline dark:border-[#222738] hover:bg-cool-slate dark:hover:bg-slate-800/50 flex items-center gap-3 border-b px-4 py-3 last:border-0"
         >
           <Avatar name={team.managerName} size={34} />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{team.name}</div>
+            <div className="truncate text-sm font-medium text-ink dark:text-slate-100">{team.name}</div>
             <div className="text-faint flex items-center gap-1 text-xs">
               <Crown size={11} className="text-amber shrink-0" />
               <span className="truncate">
@@ -95,7 +95,7 @@ function TeamList({ teams }: { teams: TeamListRow[] }) {
             </div>
           </div>
           <div className="hidden text-right sm:block">
-            <div className="text-ink text-sm font-medium tabular-nums">{team.memberCount}</div>
+            <div className="text-ink dark:text-slate-100 text-sm font-medium tabular-nums">{team.memberCount}</div>
             <div className="text-faint text-[11px]">
               member{team.memberCount === 1 ? '' : 's'}
             </div>
@@ -114,9 +114,9 @@ function TeamList({ teams }: { teams: TeamListRow[] }) {
 
 function EmptyState() {
   return (
-    <div className="border-hairline rounded-xl border bg-white p-10 text-center">
-      <h2 className="font-display text-base font-semibold">No teams yet</h2>
-      <p className="text-muted mx-auto mt-1.5 max-w-md text-sm">
+    <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-10 text-center">
+      <h2 className="font-display text-base font-semibold text-slate-900 dark:text-slate-100">No teams yet</h2>
+      <p className="text-muted dark:text-slate-400 mx-auto mt-1.5 max-w-md text-sm">
         Teams appear here as your managers create them. Add a manager from the Managers screen to
         get started.
       </p>

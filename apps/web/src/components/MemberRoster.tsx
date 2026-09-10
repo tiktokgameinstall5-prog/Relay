@@ -23,15 +23,15 @@ export function MemberRoster({
   onDeactivate?: (member: MemberRow) => void;
 }) {
   return (
-    <div className="border-hairline overflow-hidden rounded-xl border bg-white">
+    <div className="border-hairline dark:border-[#222738] overflow-hidden rounded-xl border bg-white dark:bg-[#151821]">
       {members.map((member) => (
         <div
           key={member.id}
-          className="border-hairline flex items-center gap-3 border-b px-4 py-3 last:border-0 hover:bg-gray-50/50 transition"
+          className="border-hairline dark:border-[#222738] flex items-center gap-3 border-b px-4 py-3 last:border-0 hover:bg-gray-50/50 dark:hover:bg-slate-800/40 transition"
         >
           <Avatar name={member.name} size={32} />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium">{member.name}</div>
+            <div className="truncate text-sm font-medium text-ink dark:text-slate-100">{member.name}</div>
             <div className="text-faint truncate text-xs">{member.email}</div>
           </div>
           <div className="text-faint hidden font-mono text-[11px] sm:block">
@@ -43,7 +43,7 @@ export function MemberRoster({
               type="button"
               onClick={() => onDeactivate(member)}
               title="Deactivate member"
-              className="rounded-lg p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 transition"
+              className="rounded-lg p-1.5 text-gray-400 dark:text-slate-400 hover:bg-red-50 dark:hover:bg-red-950/40 hover:text-red-600 dark:hover:text-red-400 transition"
             >
               <UserMinus size={15} />
             </button>

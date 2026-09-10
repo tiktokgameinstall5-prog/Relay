@@ -46,13 +46,13 @@ export function ModalShell({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`max-h-[90dvh] sm:max-h-[85vh] w-full overflow-y-auto rounded-2xl bg-white p-4 sm:p-6 shadow-2xl outline-none ${
+        className={`max-h-[90dvh] sm:max-h-[85vh] w-full overflow-y-auto rounded-2xl bg-white dark:bg-[#151821] text-ink dark:text-slate-100 border border-transparent dark:border-[#222738] p-4 sm:p-6 shadow-2xl outline-none ${
           wide ? 'max-w-lg' : 'max-w-sm'
         }`}
       >
         <div className="mb-3.5 sm:mb-4 flex items-center justify-between">
-          <h3 className="font-display text-base sm:text-lg font-semibold">{title}</h3>
-          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors">
+          <h3 className="font-display text-base sm:text-lg font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
             <X size={18} />
           </button>
         </div>

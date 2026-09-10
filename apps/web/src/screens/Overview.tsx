@@ -93,8 +93,8 @@ function OverviewBody({
 
       {analytics && (
         <div className="mt-4 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-          <div className="border-hairline rounded-xl border bg-white p-4 sm:p-5">
-            <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
+          <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-4 sm:p-5">
+            <div className="text-muted dark:text-slate-400 flex items-center gap-1.5 text-xs font-medium">
               <CheckCircle2 size={13} className="text-[#00C875]" />
               <span>Completion rate</span>
             </div>
@@ -109,18 +109,18 @@ function OverviewBody({
             icon={<Activity size={13} />}
           />
 
-          <div className="border-hairline rounded-xl border bg-white p-4 sm:p-5">
-            <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
-              <Trophy size={13} className="text-[#0073EA]" />
+          <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-4 sm:p-5">
+            <div className="text-muted dark:text-slate-400 flex items-center gap-1.5 text-xs font-medium">
+              <Trophy size={13} className="text-[#0073EA] dark:text-blue-400" />
               <span>Avg member score</span>
             </div>
-            <div className="font-display mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[#0073EA]">
+            <div className="font-display mt-2 text-2xl sm:text-3xl font-bold tabular-nums text-[#0073EA] dark:text-blue-400">
               {analytics.rankings.averageRanking ? Math.round(analytics.rankings.averageRanking) : '—'}
             </div>
           </div>
 
-          <div className="border-hairline rounded-xl border bg-white p-4 sm:p-5">
-            <div className="text-muted flex items-center gap-1.5 text-xs font-medium">
+          <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-4 sm:p-5">
+            <div className="text-muted dark:text-slate-400 flex items-center gap-1.5 text-xs font-medium">
               <Crown size={13} className="text-[#FDAB3D]" />
               <span>Top performer</span>
             </div>
@@ -132,20 +132,20 @@ function OverviewBody({
       )}
 
       {bottlenecks && bottlenecks.bottlenecks.length > 0 && (
-        <div className="border-hairline mt-6 rounded-xl border bg-white p-5">
+        <div className="border-hairline dark:border-[#222738] mt-6 rounded-xl border bg-white dark:bg-[#151821] p-5">
           <div className="mb-3 flex items-center gap-2 text-[#FDAB3D]">
             <AlertTriangle size={16} />
-            <h2 className="font-display text-[15px] font-semibold text-[#161A22]">Workflow Bottlenecks</h2>
+            <h2 className="font-display text-[15px] font-semibold text-[#161A22] dark:text-slate-100">Workflow Bottlenecks</h2>
           </div>
-          <p className="text-xs text-[#68707C]">
+          <p className="text-xs text-[#68707C] dark:text-slate-400">
             These steps exceeded the average duration ({bottlenecks.averageStepDurationSeconds}s) and may require attention:
           </p>
-          <div className="mt-3 divide-y divide-[#F4F5F8]">
+          <div className="mt-3 divide-y divide-[#F4F5F8] dark:divide-[#222738]">
             {bottlenecks.bottlenecks.map((b) => (
               <div key={b.stepId} className="flex items-center justify-between py-2 text-xs">
                 <div>
-                  <span className="font-medium text-[#161A22]">{b.taskName}</span>{' '}
-                  <span className="text-[#9AA1AC]">· Step {b.stepOrder} ({b.memberName})</span>
+                  <span className="font-medium text-[#161A22] dark:text-slate-200">{b.taskName}</span>{' '}
+                  <span className="text-[#9AA1AC] dark:text-slate-400">· Step {b.stepOrder} ({b.memberName})</span>
                 </div>
                 <span className="font-mono font-semibold text-[#FDAB3D]">
                   {b.durationFormatted}
@@ -157,21 +157,21 @@ function OverviewBody({
       )}
 
       {quotas && (
-        <div className="border-hairline mt-6 rounded-xl border bg-white p-5">
+        <div className="border-hairline dark:border-[#222738] mt-6 rounded-xl border bg-white dark:bg-[#151821] p-5">
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-2 text-primary">
               <Gauge size={16} />
-              <h2 className="font-display text-[15px] font-semibold text-[#161A22]">Organization Resource Quotas</h2>
+              <h2 className="font-display text-[15px] font-semibold text-[#161A22] dark:text-slate-100">Organization Resource Quotas</h2>
             </div>
-            <span className="text-[11px] font-medium text-[#68707C]">Standard Plan</span>
+            <span className="text-[11px] font-medium text-[#68707C] dark:text-slate-400">Standard Plan</span>
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
               <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-[#68707C]">Teams</span>
-                <span className="font-medium text-[#161A22]">{quotas.teams.current} / {quotas.teams.limit}</span>
+                <span className="text-[#68707C] dark:text-slate-400">Teams</span>
+                <span className="font-medium text-[#161A22] dark:text-slate-200">{quotas.teams.current} / {quotas.teams.limit}</span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
                 <div
                   className="h-full bg-primary rounded-full transition-all"
                   style={{ width: `${Math.min(100, Math.round((quotas.teams.current / quotas.teams.limit) * 100))}%` }}
@@ -181,10 +181,10 @@ function OverviewBody({
 
             <div>
               <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-[#68707C]">Active Members</span>
-                <span className="font-medium text-[#161A22]">{quotas.members.current} / {quotas.members.limit}</span>
+                <span className="text-[#68707C] dark:text-slate-400">Active Members</span>
+                <span className="font-medium text-[#161A22] dark:text-slate-200">{quotas.members.current} / {quotas.members.limit}</span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
                 <div
                   className="h-full bg-[#00C875] rounded-full transition-all"
                   style={{ width: `${Math.min(100, Math.round((quotas.members.current / quotas.members.limit) * 100))}%` }}
@@ -194,10 +194,10 @@ function OverviewBody({
 
             <div>
               <div className="flex justify-between text-xs mb-1.5">
-                <span className="text-[#68707C]">Active Tasks</span>
-                <span className="font-medium text-[#161A22]">{quotas.activeTasks.current} / {quotas.activeTasks.limit}</span>
+                <span className="text-[#68707C] dark:text-slate-400">Active Tasks</span>
+                <span className="font-medium text-[#161A22] dark:text-slate-200">{quotas.activeTasks.current} / {quotas.activeTasks.limit}</span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-slate-800">
                 <div
                   className="h-full bg-[#FDAB3D] rounded-full transition-all"
                   style={{ width: `${Math.min(100, Math.round((quotas.activeTasks.current / quotas.activeTasks.limit) * 100))}%` }}
@@ -213,7 +213,7 @@ function OverviewBody({
       ) : (
         <div className="mt-8">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-display text-[15px] font-semibold">Recent teams</h2>
+            <h2 className="font-display text-[15px] font-semibold text-slate-900 dark:text-slate-100">Recent teams</h2>
             {teams.length > MAX_CARDS && (
               <Link to="/teams" className="text-signal text-sm font-semibold hover:underline">
                 View all {teams.length} teams →
@@ -235,12 +235,12 @@ function OverviewBody({
  *  <a> (nesting a button in an anchor is invalid HTML). */
 function EmptyTeams({ hasManagers }: { hasManagers: boolean }) {
   return (
-    <div className="border-hairline mt-8 rounded-xl border bg-white p-10 text-center">
+    <div className="border-hairline dark:border-[#222738] mt-8 rounded-xl border bg-white dark:bg-[#151821] p-10 text-center">
       <div className="bg-signal-soft mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
         <Building2 size={22} className="text-signal" />
       </div>
-      <h2 className="font-display mt-4 text-base font-semibold">No teams yet</h2>
-      <p className="text-muted mx-auto mt-1.5 max-w-md text-sm">
+      <h2 className="font-display mt-4 text-base font-semibold text-slate-900 dark:text-slate-100">No teams yet</h2>
+      <p className="text-muted dark:text-slate-400 mx-auto mt-1.5 max-w-md text-sm">
         {hasManagers
           ? 'Your managers haven’t created their teams yet. Each manager builds and runs exactly one team.'
           : 'Start by adding a manager. Managers can’t sign themselves up — you create the account, and they build and run their own team.'}

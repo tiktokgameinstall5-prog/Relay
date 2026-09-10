@@ -43,7 +43,7 @@ export function RelayChain({
                 <div className="relative">
                   <Avatar name={step.name} size={30} ring={isActive} />
                   {step.state === 'completed' && (
-                    <div className="absolute -right-0.5 -bottom-0.5 rounded-full bg-white">
+                    <div className="absolute -right-0.5 -bottom-0.5 rounded-full bg-white dark:bg-[#151821]">
                       {/* #00C875 / #E7FBF1 mirror the done / done-soft tokens —
                           lucide takes colour strings on props, not utilities. */}
                       <CheckCircle2 size={13} color="#00C875" fill="#E7FBF1" />

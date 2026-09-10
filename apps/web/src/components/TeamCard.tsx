@@ -18,19 +18,19 @@ export function TeamCard({ team }: { team: TeamListRow }) {
   return (
     <Link
       to={`/teams/${team.id}`}
-      className="border-hairline block rounded-xl border bg-white p-5 transition-shadow hover:shadow-sm"
+      className="border-hairline dark:border-[#222738] block rounded-xl border bg-white dark:bg-[#151821] p-5 transition-all hover:shadow-sm dark:hover:border-slate-700"
     >
       <div className="flex items-center gap-3">
         <Avatar name={team.managerName} size={38} />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-semibold">{team.name}</div>
+          <div className="truncate text-sm font-semibold text-ink dark:text-slate-100">{team.name}</div>
           <div className="text-faint flex items-center gap-1 text-xs">
             <Crown size={11} className="text-amber shrink-0" />
             <span className="truncate">{team.managerName}</span>
           </div>
         </div>
       </div>
-      <div className="text-muted mt-3 flex gap-4 text-xs">
+      <div className="text-muted dark:text-slate-400 mt-3 flex gap-4 text-xs">
         <span>
           {team.memberCount} member{team.memberCount === 1 ? '' : 's'}
         </span>

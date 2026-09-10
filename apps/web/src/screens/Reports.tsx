@@ -56,10 +56,10 @@ export function Reports() {
       </div>
 
       {!canSubmit && (
-        <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-[#E4E7EC] bg-white p-3.5 text-xs text-[#68707C]">
+        <div className="mt-5 flex items-start gap-2.5 rounded-lg border border-[#E4E7EC] dark:border-[#222738] bg-white dark:bg-[#151821] p-3.5 text-xs text-[#68707C] dark:text-slate-400">
           <Info size={16} className="text-[#3654F4] shrink-0 mt-0.5" />
           <div>
-            <span className="font-medium text-[#161A22]">Read-only access: </span>
+            <span className="font-medium text-[#161A22] dark:text-slate-200">Read-only access: </span>
             You can read all completion reports delivered to your team. Completion reports are
             submitted by designated reporters or managers upon task completion.
           </div>
@@ -106,10 +106,10 @@ function ReportsFeed({
 
   if (reports.length === 0) {
     return (
-      <div className="border-hairline rounded-xl border bg-white p-8 text-center">
+      <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-8 text-center">
         <MessageSquare size={28} className="mx-auto text-[#3654F4]" />
-        <h2 className="font-display mt-2 text-base font-semibold">No completion reports yet</h2>
-        <p className="mt-1 text-xs text-[#68707C]">
+        <h2 className="font-display mt-2 text-base font-semibold text-slate-900 dark:text-slate-100">No completion reports yet</h2>
+        <p className="mt-1 text-xs text-[#68707C] dark:text-slate-400">
           When a task completes its final relay step, the designated reporter will submit a completion report.
         </p>
       </div>
@@ -117,18 +117,18 @@ function ReportsFeed({
   }
 
   return (
-    <div className="border-hairline rounded-xl border bg-white p-5">
-      <div className="mb-4 flex items-center justify-between border-b border-[#F4F5F8] pb-3">
+    <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-5">
+      <div className="mb-4 flex items-center justify-between border-b border-[#F4F5F8] dark:border-[#222738] pb-3">
         <div className="flex items-center gap-2">
           <MessageSquare size={18} className="text-[#3654F4]" />
-          <h2 className="font-display text-[15px] font-semibold">Completion reports</h2>
+          <h2 className="font-display text-[15px] font-semibold text-slate-900 dark:text-slate-100">Completion reports</h2>
         </div>
-        <span className="font-mono text-xs text-[#68707C]">
+        <span className="font-mono text-xs text-[#68707C] dark:text-slate-400">
           {reports.length} {reports.length === 1 ? 'report' : 'reports'}
         </span>
       </div>
 
-      <div className="divide-y divide-[#F4F5F8]">
+      <div className="divide-y divide-[#F4F5F8] dark:divide-[#222738]">
         {reports.map((r) => {
           const isExpanded = expandedIds.has(r.id);
           const hasDetails = Boolean(r.highlights || r.blockers);
@@ -138,29 +138,29 @@ function ReportsFeed({
               <div className="flex items-start gap-3.5">
                 <Avatar name={r.reportedByName ?? 'Reporter'} size={34} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm text-[#161A22]">
-                    <span className="font-semibold">{r.reportedByName ?? 'Reporter'}</span>{' '}
+                  <div className="text-sm text-[#161A22] dark:text-slate-200">
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{r.reportedByName ?? 'Reporter'}</span>{' '}
                     <span className="text-[#9AA1AC]">reported on</span>{' '}
                     <span className="font-medium text-[#3654F4]">{r.taskName}</span>
                   </div>
 
-                  <p className="mt-1.5 whitespace-pre-line text-sm text-[#4E5562]">
+                  <p className="mt-1.5 whitespace-pre-line text-sm text-[#4E5562] dark:text-slate-300">
                     {r.summary}
                   </p>
 
                   {/* Highlights & Blockers detail block */}
                   {isExpanded && hasDetails && (
-                    <div className="mt-3 space-y-2 rounded-lg border border-[#E4E7EC] bg-[#FAFAFC] p-3 text-xs">
+                    <div className="mt-3 space-y-2 rounded-lg border border-[#E4E7EC] dark:border-[#222738] bg-[#FAFAFC] dark:bg-[#0e1118] p-3 text-xs">
                       {r.highlights && (
                         <div>
                           <div className="font-semibold text-[#00C875]">Key Highlights</div>
-                          <p className="mt-0.5 whitespace-pre-line text-[#4E5562]">{r.highlights}</p>
+                          <p className="mt-0.5 whitespace-pre-line text-[#4E5562] dark:text-slate-300">{r.highlights}</p>
                         </div>
                       )}
                       {r.blockers && (
-                        <div className="pt-2 border-t border-[#EEF0F3]">
+                        <div className="pt-2 border-t border-[#EEF0F3] dark:border-[#222738]">
                           <div className="font-semibold text-[#FDAB3D]">Blockers & Follow-ups</div>
-                          <p className="mt-0.5 whitespace-pre-line text-[#4E5562]">{r.blockers}</p>
+                          <p className="mt-0.5 whitespace-pre-line text-[#4E5562] dark:text-slate-300">{r.blockers}</p>
                         </div>
                       )}
                     </div>

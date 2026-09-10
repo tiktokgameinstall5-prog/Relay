@@ -153,10 +153,10 @@ function LeaderboardCard({
 }) {
   if (members.length === 0) {
     return (
-      <div className="border-hairline rounded-xl border bg-white p-8 text-center">
+      <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-8 text-center">
         <Trophy size={28} className="mx-auto text-[#FDAB3D]" />
-        <h2 className="font-display mt-2 text-base font-semibold">No members on the leaderboard yet</h2>
-        <p className="mt-1 text-xs text-[#68707C]">
+        <h2 className="font-display mt-2 text-base font-semibold text-slate-900 dark:text-slate-100">No members on the leaderboard yet</h2>
+        <p className="mt-1 text-xs text-[#68707C] dark:text-slate-400">
           Team members will appear here once accounts are active.
         </p>
       </div>
@@ -166,13 +166,13 @@ function LeaderboardCard({
   const maxScore = Math.max(...members.map((m) => m.ranking), 100);
 
   return (
-    <div className="border-hairline rounded-xl border bg-white p-5">
-      <div className="mb-4 flex items-center justify-between border-b border-[#F4F5F8] pb-3">
+    <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-5">
+      <div className="mb-4 flex items-center justify-between border-b border-[#F4F5F8] dark:border-[#222738] pb-3">
         <div className="flex items-center gap-2">
           <Trophy size={18} className="text-[#FDAB3D]" />
-          <h2 className="font-display text-[15px] font-semibold">Team ranking</h2>
+          <h2 className="font-display text-[15px] font-semibold text-slate-900 dark:text-slate-100">Team ranking</h2>
         </div>
-        <span className="font-mono text-xs text-[#68707C]">
+        <span className="font-mono text-xs text-[#68707C] dark:text-slate-400">
           {members.length} {members.length === 1 ? 'member' : 'members'}
         </span>
       </div>
@@ -187,7 +187,7 @@ function LeaderboardCard({
               key={m.id}
               data-testid={`ranking-row-${m.id}`}
               className={`flex flex-col gap-3 rounded-lg p-3 transition-colors sm:flex-row sm:items-center ${
-                isSelf ? 'bg-signal/5 ring-signal/30 ring-1' : 'hover:bg-[#FAFAFC]'
+                isSelf ? 'bg-signal/5 ring-signal/30 ring-1' : 'hover:bg-[#FAFAFC] dark:hover:bg-slate-800/40'
               }`}
             >
               {/* Rank indicator & Avatar */}
@@ -205,7 +205,7 @@ function LeaderboardCard({
               <div className="min-w-0 flex-1">
                 <div className="flex items-baseline justify-between">
                   <div className="flex items-center gap-2 truncate">
-                    <span className="truncate text-sm font-medium">{m.name}</span>
+                    <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">{m.name}</span>
                     {isSelf && (
                       <span className="bg-signal/10 text-signal rounded px-1.5 py-0.5 text-[10px] font-semibold">
                         You
@@ -214,19 +214,19 @@ function LeaderboardCard({
                     {m.isReporter && (
                       <span
                         title="Designated task completion reporter"
-                        className="flex items-center gap-1 rounded bg-[#E7FBF1] px-1.5 py-0.5 text-[10px] font-medium text-[#00C875]"
+                        className="flex items-center gap-1 rounded bg-[#E7FBF1] dark:bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-[#00C875] dark:text-emerald-400 border border-transparent dark:border-emerald-800/50"
                       >
                         <Star size={10} fill="#00C875" /> Reporter
                       </span>
                     )}
                   </div>
-                  <span className="font-mono text-xs font-semibold text-[#161A22]">
+                  <span className="font-mono text-xs font-semibold text-[#161A22] dark:text-slate-100">
                     {m.ranking}
                   </span>
                 </div>
 
                 {/* Progress bar matching prototype */}
-                <div className="mt-2 h-2 rounded-full bg-[#EEF0F3]">
+                <div className="mt-2 h-2 rounded-full bg-[#EEF0F3] dark:bg-slate-800">
                   <div
                     className="h-2 rounded-full transition-all duration-300"
                     style={{
@@ -244,7 +244,7 @@ function LeaderboardCard({
                     type="button"
                     onClick={() => onAdjust(m)}
                     title="Adjust ranking score"
-                    className="flex items-center gap-1 rounded-md border border-[#E4E7EC] bg-white px-2 py-1 text-xs font-medium text-[#161A22] hover:bg-[#F4F5F8]"
+                    className="flex items-center gap-1 rounded-md border border-[#E4E7EC] dark:border-[#222738] bg-white dark:bg-[#181c27] px-2 py-1 text-xs font-medium text-[#161A22] dark:text-slate-200 hover:bg-[#F4F5F8] dark:hover:bg-slate-800"
                   >
                     <Edit3 size={12} />
                     Adjust
@@ -256,8 +256,8 @@ function LeaderboardCard({
                     title={m.isReporter ? 'Revoke reporter role' : 'Make designated reporter'}
                     className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium transition-colors ${
                       m.isReporter
-                        ? 'border-[#00C875]/30 bg-[#E7FBF1] text-[#00C875] hover:bg-[#D3F7E5]'
-                        : 'border-[#E4E7EC] bg-white text-[#68707C] hover:bg-[#F4F5F8]'
+                        ? 'border-[#00C875]/30 bg-[#E7FBF1] dark:bg-emerald-950/40 text-[#00C875] dark:text-emerald-400 hover:bg-[#D3F7E5]'
+                        : 'border-[#E4E7EC] dark:border-[#222738] bg-white dark:bg-[#181c27] text-[#68707C] dark:text-slate-300 hover:bg-[#F4F5F8] dark:hover:bg-slate-800'
                     }`}
                   >
                     <Star size={12} fill={m.isReporter ? '#00C875' : 'none'} />

@@ -1,5 +1,7 @@
 @import 'tailwindcss';
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 /* Tailwind 4 scans content via @source rather than a config file. Paths are
    relative to THIS file (apps/web/src/). The prototype at the repo root is no
    longer scanned — it is the design reference, not shipped code. */
@@ -41,6 +43,27 @@
   --font-display: 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+  --color-ink: #f1f5f9;
+  --color-cool-slate: #0b0d13;
+  --color-hairline: #222738;
+  --color-muted: #94a3b8;
+  --color-faint: #64748b;
+  --color-gray: #334155;
+  --color-wash: #131722;
+  --color-hairline-soft: #1c2233;
+  --color-done-soft: rgba(0, 200, 117, 0.15);
+  --color-signal-soft: rgba(54, 84, 244, 0.18);
+  --color-sidebar-bg: #07090e;
+  --color-sidebar-bg-active: #151a27;
+  --color-sidebar-text: #94a3b8;
 }
 
 html,

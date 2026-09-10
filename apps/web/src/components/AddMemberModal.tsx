@@ -1,4 +1,4 @@
-﻿import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { Users, Crown } from 'lucide-react';
 import { createMember } from '../api/auth';
 import { ApiError } from '../api/client';
@@ -93,14 +93,14 @@ export function AddMemberModal({
         {/* Team Selection dropdown for Owner when teams array is provided without a preselection */}
         {!preselectedTeam && teams && teams.length > 0 && (
           <div>
-            <label className="block text-xs font-semibold text-ink mb-1.5">
+            <label className="block text-xs font-semibold text-ink dark:text-slate-300 mb-1.5">
               Select target team & manager
             </label>
             <div className="relative">
               <select
                 value={selectedTeamId}
                 onChange={(e) => setSelectedTeamId(e.target.value)}
-                className="w-full rounded-xl border border-hairline bg-white px-3.5 py-2.5 text-sm text-ink shadow-2xs focus:border-signal focus:outline-hidden focus:ring-1 focus:ring-signal transition-colors"
+                className="w-full rounded-xl border border-hairline dark:border-[#222738] bg-white dark:bg-[#0e1118] px-3.5 py-2.5 text-sm text-ink dark:text-slate-100 shadow-2xs focus:border-signal focus:outline-hidden focus:ring-1 focus:ring-signal transition-colors"
                 required
               >
                 {teams.map((t) => (
@@ -111,7 +111,7 @@ export function AddMemberModal({
               </select>
             </div>
             {effectiveTeam && (
-              <p className="mt-1.5 text-xs text-muted flex items-center gap-1">
+              <p className="mt-1.5 text-xs text-muted dark:text-slate-400 flex items-center gap-1">
                 <Crown size={12} className="text-amber shrink-0" />
                 <span>Managed by {effectiveTeam.managerName}</span>
               </p>
@@ -120,10 +120,10 @@ export function AddMemberModal({
         )}
 
         {preselectedTeam && (
-          <div className="rounded-xl border border-hairline bg-cool-slate/70 p-3 flex items-center gap-2.5 text-xs text-muted">
+          <div className="rounded-xl border border-hairline dark:border-[#222738] bg-cool-slate/70 dark:bg-slate-850 p-3 flex items-center gap-2.5 text-xs text-muted dark:text-slate-400">
             <Users size={15} className="text-signal shrink-0" />
             <div>
-              <span className="font-semibold text-ink">{preselectedTeam.name}</span>
+              <span className="font-semibold text-ink dark:text-slate-200">{preselectedTeam.name}</span>
             </div>
           </div>
         )}

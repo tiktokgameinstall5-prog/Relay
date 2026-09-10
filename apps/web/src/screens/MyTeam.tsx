@@ -159,11 +159,11 @@ function CreateTeamCard({ onCreated }: { onCreated: () => void }) {
   }
 
   return (
-    <div className="border-hairline rounded-xl border bg-white p-8">
+    <div className="border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] p-8">
       <div className="bg-signal-soft mx-auto flex h-12 w-12 items-center justify-center rounded-xl">
         <Building2 size={22} className="text-signal" />
       </div>
-      <h2 className="font-display mt-4 text-center text-base font-semibold">Create your team</h2>
+      <h2 className="font-display mt-4 text-center text-base font-semibold text-slate-900 dark:text-slate-100">Create your team</h2>
       <p className="text-muted mx-auto mt-1.5 max-w-md text-center text-sm">
         You run exactly one team. Name it, then invite your members — each gets a single-use
         passcode by email, the same way you were invited.

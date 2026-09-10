@@ -19,15 +19,15 @@ export function Panel({
   children: ReactNode;
 }) {
   return (
-    <div className={`border-hairline rounded-xl border bg-white ${title ? 'p-6' : ''} ${className}`}>
+    <div className={`border-hairline dark:border-[#222738] rounded-xl border bg-white dark:bg-[#151821] text-ink dark:text-slate-100 ${title ? 'p-6' : ''} ${className}`}>
       {title && (
         <div className="mb-2 flex items-center gap-2">
           {icon}
-          <h2 className="font-display text-[15px] font-semibold">{title}</h2>
+          <h2 className="font-display text-[15px] font-semibold text-slate-900 dark:text-slate-100">{title}</h2>
         </div>
       )}
       {title ? (
-        <div className="text-sm text-[#68707C]">{children}</div>
+        <div className="text-sm text-[#68707C] dark:text-slate-400">{children}</div>
       ) : (
         children
       )}
